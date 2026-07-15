@@ -12,7 +12,10 @@ import SwiftData
 struct checklist_appApp: App {
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
-            Item.self,
+            Checklist.self,
+            TaskItem.self,
+            CompletionLog.self,
+            User.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 

@@ -32,3 +32,6 @@ fastlane/test_output
 # Misc
 *.swp
 *~
+
+# Agent tooling scratch space
+.tmp/
