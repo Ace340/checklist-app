@@ -1,4 +1,4 @@
-<!-- Context: project-intelligence/nav | Priority: high | Version: 1.0 | Updated: 2025-01-12 -->
+<!-- Context: project-intelligence/nav | Priority: high | Version: 1.2 | Updated: 2026-07-14 -->
 
 # Project Intelligence
 
@@ -20,11 +20,12 @@
 
 | What You Need | File | Description |
 |---------------|------|-------------|
-| Understand the "why" | `business-domain.md` | Problem, users, value proposition |
-| Understand the "how" | `technical-domain.md` | Stack, architecture, integrations |
+| Understand the "why" | `business-domain.md` ✅ | **Restaurant checklist operations — users, value, domain model** |
+| Understand the "how" | `technical-domain.md` ✅ | **SwiftUI + SwiftData (iOS 17+) — stack, models, view patterns** |
 | See the connection | `business-tech-bridge.md` | Business → technical mapping |
 | Know the context | `decisions-log.md` | Why decisions were made |
 | Current state | `living-notes.md` | Active issues and open questions |
+| SwiftData deep-dive | `development/frameworks/swiftdata/` | Harvested reference: `@Model`, relationships, container setup, pitfalls (5 files) |
 | All of the above | Read all files in order | Full project intelligence |
 
 ## Usage
