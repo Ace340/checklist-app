@@ -11,7 +11,7 @@ import Foundation
 /// A day of the week, Monday-first. Weekly duties are bound to one of these
 /// (see `Cadence` in CONTEXT.md). Monday-first because the restaurant week
 /// rolls over on Monday.
-enum Weekday: Int, Comparable {
+enum Weekday: Int, Comparable, CaseIterable {
     case monday = 0
     case tuesday = 1
     case wednesday = 2

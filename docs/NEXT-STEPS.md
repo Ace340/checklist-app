@@ -4,6 +4,89 @@ Handoff for the restaurant checklists feature. This doc is self-contained: read 
 
 ---
 
+## 🔖 Session handoff — 2026-07-18 (RESUME HERE)
+
+**One-line status:** Phase 1 + Phase 2 **compile green** (`xcodebuild build ... iPhone 17` → **BUILD SUCCEEDED**) and are committed on `main`. Next: port the 18 Phase 0 tests into a new XCTest target.
+
+### Exact resume action
+1. **User (GUI-only):** in Xcode, `File → New → Target → iOS → Unit Testing Bundle`, name it **`checklist-appTests`**. Synced folders auto-include the .swift files agent writes.
+2. Port the 18 tests from `.tmp/tdd/Tests.swift` into `XCTestCase` methods under `checklist-appTests/`.
+3. `xcodebuild test -scheme checklist-app -destination 'platform=iOS Simulator,name=iPhone 17'` → all green.
+4. Run `/code-review` skill against `CONTEXT.md` + `docs/adr/0001-derived-completion-state.md`.
+5. Commit tests.
+
+### What landed this session (commit after this edit)
+- Applied the predicate-safe fix in `checklist_appApp.swift` and `ContentView.swift`: `$0.role == UserRole.manager` → `$0.role.rawValue == "manager"` (SwiftData `#Predicate` cannot compare an enum-case keypath; compare the `String` rawValue instead).
+- Xcode 26.6 toolchain gate cleared (`xcodebuild` + simulators now available — was previously blocked on `xcode-select` pointing at CLT-only).
+
+### Open design decisions still flagged (not blocking)
+- **Finish-Day gating is loose:** the button shows if *any* manager `User` exists (a default manager is seeded on launch). Real gating needs a "current user"/auth session. `// TODO` markers in `checklist_appApp.swift` and `ContentView.swift`. Revisit when auth lands.
+- **Forgotten finish-day:** if nobody hits "Finish day", next morning's logs attach to yesterday's still-open business day. Options: warn on launch if the open business day is >24h old; auto-prompt manager.
+- **Finish-day with incomplete closing duties:** allowed (just closes) or blocked until all closing duties done? Decide.
+
+### Phase status
+| Phase | Status |
+|-------|--------|
+| Phase 0 — pure scheduling | ✅ Done (18/18) |
+| Phase 1 — SwiftData models | ✅ Compiles green |
+| Phase 2 — UI | ✅ Compiles green |
+| Tests — XCTest port | ⏳ **Next** — user creates target, agent ports 18 tests |
+| Phase 3 — `/code-review` + final commit | ⏳ Last |
+
+---
+
+## 🔖 Session handoff — 2026-07-16
+
+**One-line status:** Phase 1 (models) + Phase 2 (UI) are **written but not yet compiling**. Exactly one known error remained. Work was **uncommitted on `main`** until the build went green (done in the 2026-07-18 session above).
+
+### Exact resume action (~3 minutes)
+1. Apply this one fix in **two** files — `checklist_appApp.swift` (the `seedOnLaunch` `FetchDescriptor<User>`) and `ContentView.swift` (the `@Query` for managers):
+   ```swift
+   // FROM  (errors: "key path cannot refer to enum case 'manager'")
+   #Predicate { $0.role == UserRole.manager }
+   // TO    (compare the String rawValue — predicate-safe)
+   #Predicate { $0.role.rawValue == "manager" }
+   ```
+   Why: SwiftData `#Predicate` cannot compare a `Codable` enum property to an enum case via keypath. Compare the `String` rawValue instead.
+2. Rebuild:
+   ```sh
+   xcodebuild build -scheme checklist-app -destination 'platform=iOS Simulator,name=iPhone 17' -quiet
+   ```
+3. Address any further errors that surface (the two gotchas below are already resolved).
+
+### Already-fixed SwiftData gotchas (don't re-discover)
+- **`var weekday: Weekday?` was treated as a relationship, not a value attribute** → fixed by storing `weekdayRawValue: Int?` and exposing `weekday: Weekday?` as a computed property. All call sites (`duty.weekday`) unchanged.
+- **Bare `.manager` in `#Predicate` errored ("member access without an explicit base")** → changed to `UserRole.manager`, which then surfaced the *next* error (the keypath/enum-case one), which is the remaining fix above (→ `.rawValue == "manager"`).
+
+### Files changed this session (all uncommitted on `main`)
+- `Models/Enums.swift` — dropped `ChecklistType`; added `Area`, `Cadence`, `Phase` (`String, Codable, CaseIterable`)
+- `Models/Checklist.swift` — `area`/`cadence`/`phase?` replace `type`
+- `Models/TaskItem.swift` — removed `isCompleted` + `completedAt` (ADR #1); added `weekdayRawValue` + computed `weekday`
+- `Models/CompletionLog.swift` — added `businessDay: BusinessDay?`
+- `Models/BusinessDay.swift` — **NEW**: `openedAt`, `closedAt?`, `logs`, `isOpen`
+- `Scheduling/DutyStatus.swift` — added `CaseIterable` to `Weekday` (for the UI picker)
+- `checklist_appApp.swift` — `BusinessDay.self` in `Schema`; seeds an open `BusinessDay` + a default `User(.manager)` on launch
+- `ContentView.swift` — full Phase 2 rewrite: 3-level nav (FOH/BOH → Opening/Closing/Weekly → duties), derived status via the `DutyStatus` seam, tap-to-log, undo, Add-Duty sheet, manager Finish-Day button
+
+### After the build is green
+1. **Tests — Option A (agreed):** write XCTest model tests into `checklist-appTests/`; the **user** creates the test target once in Xcode (`File → New → Target → iOS → Unit Testing Bundle`, name `checklist-appTests`). Synced folders auto-join the `.swift` files.
+2. `xcodebuild test -scheme checklist-app -destination 'platform=iOS Simulator,name=iPhone 17'` → all green.
+3. Commit Phase 1 + Phase 2 together.
+
+### Open design decision flagged
+- **Finish-Day gating is loose:** the button shows if *any* manager `User` exists (a default manager is seeded on launch). Real gating needs a "current user"/auth session, which doesn't exist yet. Marked with `// TODO` in `checklist_appApp.swift` and `ContentView.swift`. Revisit when auth lands.
+
+### Phase status
+| Phase | Status |
+|-------|--------|
+| Phase 0 — pure scheduling | ✅ Done (18/18) |
+| Phase 1 — SwiftData models | 🟡 Written; 1 compile error from green (fix above) |
+| Phase 2 — UI | 🟡 Written; compiles together with Phase 1 |
+| Tests — XCTest port | ⏳ After green build (Option A) |
+| Phase 3 — review + commit | ⏳ Last |
+
+---
+
 ## Where we are
 
 | Phase | Status |
