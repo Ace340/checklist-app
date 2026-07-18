@@ -20,7 +20,7 @@ struct ContentView: View {
 
     /// Manager presence gates the Finish Day action. TODO: gate on a real
     /// current-user session once auth exists (see checklist_appApp.swift).
-    @Query(filter: #Predicate<User> { $0.role.rawValue == "manager" })
+    @Query(filter: #Predicate<User> { $0.roleRawValue == "manager" })
     private var managers: [User]
 
     private var currentBusinessDay: BusinessDay? { openBusinessDays.first }

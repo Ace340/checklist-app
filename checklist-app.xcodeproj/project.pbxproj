@@ -6,8 +6,19 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXContainerItemProxy section */
+		507F5911300BF9080059F970 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 506422E03006E9000093B706 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 506422E73006E9000093B706;
+			remoteInfo = "checklist-app";
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		506422E83006E9000093B706 /* checklist-app.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "checklist-app.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		507F590D300BF9080059F970 /* checklist-appTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "checklist-appTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -16,10 +27,22 @@
 			path = "checklist-app";
 			sourceTree = "<group>";
 		};
+		507F590E300BF9080059F970 /* checklist-appTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "checklist-appTests";
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		506422E53006E9000093B706 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		507F590A300BF9080059F970 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -33,6 +56,7 @@
 			isa = PBXGroup;
 			children = (
 				506422EA3006E9000093B706 /* checklist-app */,
+				507F590E300BF9080059F970 /* checklist-appTests */,
 				506422E93006E9000093B706 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,6 +65,7 @@
 			isa = PBXGroup;
 			children = (
 				506422E83006E9000093B706 /* checklist-app.app */,
+				507F590D300BF9080059F970 /* checklist-appTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -70,6 +95,29 @@
 			productReference = 506422E83006E9000093B706 /* checklist-app.app */;
 			productType = "com.apple.product-type.application";
 		};
+		507F590C300BF9080059F970 /* checklist-appTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 507F5915300BF9080059F970 /* Build configuration list for PBXNativeTarget "checklist-appTests" */;
+			buildPhases = (
+				507F5909300BF9080059F970 /* Sources */,
+				507F590A300BF9080059F970 /* Frameworks */,
+				507F590B300BF9080059F970 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				507F5912300BF9080059F970 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				507F590E300BF9080059F970 /* checklist-appTests */,
+			);
+			name = "checklist-appTests";
+			packageProductDependencies = (
+			);
+			productName = "checklist-appTests";
+			productReference = 507F590D300BF9080059F970 /* checklist-appTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -82,6 +130,10 @@
 				TargetAttributes = {
 					506422E73006E9000093B706 = {
 						CreatedOnToolsVersion = 26.6;
+					};
+					507F590C300BF9080059F970 = {
+						CreatedOnToolsVersion = 26.6;
+						TestTargetID = 506422E73006E9000093B706;
 					};
 				};
 			};
@@ -100,12 +152,20 @@
 			projectRoot = "";
 			targets = (
 				506422E73006E9000093B706 /* checklist-app */,
+				507F590C300BF9080059F970 /* checklist-appTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		506422E63006E9000093B706 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		507F590B300BF9080059F970 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -122,7 +182,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		507F5909300BF9080059F970 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		507F5912300BF9080059F970 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 506422E73006E9000093B706 /* checklist-app */;
+			targetProxy = 507F5911300BF9080059F970 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		506422F33006E9020093B706 /* Debug */ = {
@@ -306,6 +381,46 @@
 			};
 			name = Release;
 		};
+		507F5913300BF9080059F970 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "acedev.checklist-appTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/checklist-app.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/checklist-app";
+			};
+			name = Debug;
+		};
+		507F5914300BF9080059F970 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "acedev.checklist-appTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/checklist-app.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/checklist-app";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -323,6 +438,15 @@
 			buildConfigurations = (
 				506422F63006E9020093B706 /* Debug */,
 				506422F73006E9020093B706 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		507F5915300BF9080059F970 /* Build configuration list for PBXNativeTarget "checklist-appTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				507F5913300BF9080059F970 /* Debug */,
+				507F5914300BF9080059F970 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

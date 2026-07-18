@@ -18,7 +18,19 @@ struct checklist_appApp: App {
             User.self,
             BusinessDay.self,
         ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+        // Use an in-memory store under SwiftUI Previews and XCTest. Both run
+        // the app's full App.main() in a sandbox where the default on-disk
+        // SwiftData store URL isn't writable, which would trip the
+        // `fatalError` below and kill the host before XCTest/Previews could
+        // connect. In-memory also gives tests a fresh, isolated store each run.
+        let env = ProcessInfo.processInfo.environment
+        let isRunningUnderTooling =
+            env["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
+            || env["XCTestConfigurationFilePath"] != nil
+        let modelConfiguration = ModelConfiguration(
+            schema: schema,
+            isStoredInMemoryOnly: isRunningUnderTooling
+        )
 
         do {
             let container = try ModelContainer(for: schema, configurations: [modelConfiguration])
@@ -55,7 +67,7 @@ private func seedOnLaunch(into context: ModelContext) {
     }
 
     let managerDescriptor = FetchDescriptor<User>(
-        predicate: #Predicate { $0.role.rawValue == "manager" }
+        predicate: #Predicate { $0.roleRawValue == "manager" }
     )
     if (try? context.fetchCount(managerDescriptor)) == 0 {
         context.insert(User(name: "Manager", role: .manager))

@@ -4,7 +4,48 @@ Handoff for the restaurant checklists feature. This doc is self-contained: read 
 
 ---
 
-## 🔖 Session handoff — 2026-07-18 (RESUME HERE)
+## 🔖 Session handoff — 2026-07-18 evening (RESUME HERE)
+
+**One-line status:** Phase 1, Phase 2, and the XCTest port are all **green and committed** on `main` (pushed). 18/18 tests pass. Next: Phase 3 (`/code-review` skill against `CONTEXT.md` + ADR #1).
+
+### Exact resume action
+1. Run the **`/code-review`** skill against the work on `main` since the Phase 0 commit (`8854020` or `411a7e6`). Focus: standards + spec compliance on Phase 1 (models), Phase 2 (UI), and the test port.
+2. Address any review findings (likely small — work has been TDD'd against Phase 0 tests).
+3. Land findings as one or more follow-up commits.
+4. Optionally tackle one of the open design decisions below (none are blocking).
+5. Consider tagging a milestone (`git tag phase-3-complete` or similar) once review is clean.
+
+### What landed this session (commit pending as this doc is written)
+- **XCTest target created** (GUI step, user did the `File → New → Target → Unit Testing Bundle` once in Xcode). Target name `checklist-appTests`, bundle ID `acedev.checklist-appTests`, `TestTargetID` = `checklist-app`. Synced folders auto-include any `.swift` under `checklist-appTests/`.
+- **`checklist-appTests/DutyStatusTests.swift`** (NEW) — 18 `XCTestCase` methods porting every assertion from `.tmp/tdd/Tests.swift`, grouped by slice with `// MARK:` comments, AAA pattern, one assertion per test, shared UTC-calendar fixture.
+- **`checklist-appTests/checklist_appTests.swift`** (DELETED) — Xcode-generated stub.
+- **Root-cause fix for SwiftUI Previews + XCTest host crashes:** the `.rawValue == "manager"` predicate from the prior session compiled but failed SwiftData's **runtime predicate validator** (`SwiftData/Schema.swift:346: Fatal error: Failed to validate \User.role.rawValue because rawValue is not a member of UserRole`). Applied the team's established `weekdayRawValue` pattern: `User` now stores `roleRawValue: String` and exposes computed `role: UserRole` that bridges via `UserRole(rawValue:) ?? .staff`. All call sites (`user.role`, `User(role: .manager)`, `user.isManager`) unchanged. Predicates now use `$0.roleRawValue == "manager"`.
+- **In-memory store under tooling:** `sharedModelContainer` switches to `isStoredInMemoryOnly: true` when `XCODE_RUNNING_FOR_PREVIEWS == "1"` or `XCTestConfigurationFilePath` is set. Normal launches use the on-disk store unchanged. Gives tests a fresh isolated store each run.
+- Verification: `xcodebuild test -scheme checklist-app -destination 'platform=iOS Simulator,name=iPhone 17'` → **TEST SUCCEEDED**, 18/18 cases pass.
+
+### Debugging notes (don't re-discover)
+- **SwiftData `#Predicate` cannot match a `Codable` enum case directly** (`$0.role == .manager` → compile error). And **`.rawValue` on a Codable-enum stored property also fails** — but only at runtime, in SwiftData's predicate validator (`Schema.swift:346`). Both fail. The team's established pattern: store `XRawValue` as a primitive, expose computed `X` that bridges. Applied for `Weekday` (in `TaskItem`) and now for `UserRole` (in `User`).
+- **Capturing the simulator's actual assertion message:** `simctl launch --console-pty <UDID> <bundleID>` streams stderr directly — much faster than parsing `.ips` crash logs (which show symbols but not the assertion string) or `simctl log stream` (which doesn't capture fputs/stderr from SwiftUI apps reliably). Use this first when a SwiftData/SwiftUI app traps on launch.
+- **Xcode "quit unexpectedly" during `New → Target`** was actually the **SwiftUI Previews host** dying (it runs the app binary under the app's name), not Xcode itself. Crash logs land in `~/Library/Logs/DiagnosticReports/<app-name>-*.ips`, not `Xcode-*.ips`. The target creation itself **succeeded** in that session — `xcodebuild -list` confirmed `checklist-appTests` was registered.
+- **The test host crashes before XCTest can connect**, so failures look like `Test crashed with signal trap before establishing connection` rather than a normal test failure. The root cause is in `App.main()` of the **host app**, not the tests.
+
+### Open design decisions still flagged (not blocking)
+- **Finish-Day gating is loose:** the button shows if *any* manager `User` exists (a default manager is seeded on launch). Real gating needs a "current user"/auth session. `// TODO` markers in `checklist_appApp.swift` and `ContentView.swift`. Revisit when auth lands.
+- **Forgotten finish-day:** if nobody hits "Finish day", next morning's logs attach to yesterday's still-open business day. Options: warn on launch if the open business day is >24h old; auto-prompt manager.
+- **Finish-day with incomplete closing duties:** allowed (just closes) or blocked until all closing duties done? Decide.
+
+### Phase status
+| Phase | Status |
+|-------|--------|
+| Phase 0 — pure scheduling | ✅ Done (18/18) |
+| Phase 1 — SwiftData models | ✅ Compiles + runs |
+| Phase 2 — UI | ✅ Compiles + runs |
+| Tests — XCTest port | ✅ **18/18 green** |
+| Phase 3 — `/code-review` + final pass | ⏳ **Next** |
+
+---
+
+## 🔖 Session handoff — 2026-07-18 (morning)
 
 **One-line status:** Phase 1 + Phase 2 **compile green** (`xcodebuild build ... iPhone 17` → **BUILD SUCCEEDED**) and are committed on `main`. Next: port the 18 Phase 0 tests into a new XCTest target.
 
