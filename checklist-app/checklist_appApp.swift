@@ -10,6 +10,13 @@ import SwiftData
 
 @main
 struct checklist_appApp: App {
+    /// The current-user session. `@State` is the canonical owner for an
+    /// `@Observable` model in SwiftUI; passing it via `.environment` lets
+    /// every view read/write the session without prop-drilling. Survives
+    /// app backgrounding because `AuthStore` persists the user's UUID in
+    /// `UserDefaults` (the PIN is never persisted — see ADR 0002).
+    @State private var authStore = AuthStore()
+
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Checklist.self,
@@ -44,6 +51,7 @@ struct checklist_appApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environment(authStore)
         }
         .modelContainer(sharedModelContainer)
     }
@@ -54,10 +62,10 @@ struct checklist_appApp: App {
 /// - The "current business day" is the one `BusinessDay` with `closedAt == nil`.
 ///   Seed one if none is open (derived daily state needs a business day to
 ///   attribute logs to).
-/// - A default manager exists so manager-only actions (e.g. Finish Day) are
-///   available. TODO: replace with real auth / current-user session — today
-///   the app is trust-based, role is a model field, not a login
-///   (see business-domain.md).
+/// - On first launch (no `User` rows yet), seed demo users per ADR 0002:
+///   one manager (PIN `0000`) and one staff user (PIN `1111`). These PINs
+///   are intentionally documented in the ADR — production deployments will
+///   replace them via a future staff-management UI.
 private func seedOnLaunch(into context: ModelContext) {
     let openDayDescriptor = FetchDescriptor<BusinessDay>(
         predicate: #Predicate { $0.closedAt == nil }
@@ -66,11 +74,14 @@ private func seedOnLaunch(into context: ModelContext) {
         context.insert(BusinessDay())
     }
 
-    let managerDescriptor = FetchDescriptor<User>(
-        predicate: #Predicate { $0.roleRawValue == "manager" }
-    )
-    if (try? context.fetchCount(managerDescriptor)) == 0 {
-        context.insert(User(name: "Manager", role: .manager))
+    let userDescriptor = FetchDescriptor<User>()
+    if (try? context.fetchCount(userDescriptor)) == 0 {
+        let manager = User(name: "Manager", role: .manager)
+        try? manager.setPin("0000")
+        let staff = User(name: "Staff", role: .staff)
+        try? staff.setPin("1111")
+        context.insert(manager)
+        context.insert(staff)
     }
 
     try? context.save()

@@ -4,30 +4,22 @@ What to build next, in priority order. Each feature is sized so it can land in o
 
 This doc is a sibling to `NEXT-STEPS.md` (session-by-session handoff) and `docs/adr/` (architecture decisions). The domain language is defined in `CONTEXT.md`.
 
-## Current state (Phase 3 complete)
+## Current state (Feature #1 — auth/session — complete)
 
-The core loop works: 6 checklists (Area × Cadence × Phase), tap-to-complete with derived state, manager finish-day, full audit trail in `CompletionLog`. 18/18 tests green. What's missing for a real restaurant to use this daily is below.
+The core loop works: 6 checklists (Area × Cadence × Phase), tap-to-complete with derived state, manager finish-day, full audit trail in `CompletionLog` — now including **who** completed each duty (Feature #1). PIN-based login, shared-device session, finish-day gated on the signed-in manager. 44/44 tests green. What's missing for a real restaurant to use this daily is below.
 
 ## Priority features
 
-### 1. Auth & current-user session
+### 1. Auth & current-user session ✅ DONE (2026-07-20)
 
 **What:** Replace the seeded default manager with a real login / current-user session.
 
-**Why:** Three pieces of the existing model are waiting on this:
-- Finish-day gating is loose — currently *any* `User` with `role == .manager` can close. Real gating needs "is *this* user a manager."
-- `CompletionLog.completedBy` exists in the schema but is never populated. Half the audit-trail value of ADR #1 is lost without it.
-- "Who did what" review (Feature #5) is meaningless without attribution.
+**Status:** Shipped. PIN-based (4 digits), shared device, one PIN per session, `@Observable AuthStore` in `.environment`, PIN stored as SHA-256 + per-user salt. `CompletionLog.completedBy` is now populated on every new log; Finish Day gates on the signed-in manager. See `docs/adr/0002-auth-and-current-user-session.md`. 44/44 tests green.
 
-**Scope:** Medium–Large. Depends on a product decision (see open questions) before code.
-
-**Dependencies:** None — this is the foundation.
-
-**Open questions:**
-- PIN-based (staff enter a 4-digit PIN to identify themselves — common in restaurant POS) vs full username/password?
-- One shared device (pass-the-phone) vs personal devices?
-- Is `User` per-restaurant? (Matters for multi-location, see Future.)
-- Where does the session live — `@Environment`? An `@Observable` auth store?
+**Deferred follow-ups (not blocking, captured in ADR 0002):**
+- Staff-management UI (add/edit/remove users, change PINs) — currently seed-only.
+- Auto sign-out on idle for shared-device hygiene.
+- Forgotten-PIN recovery flow.
 
 ### 2. Forgotten finish-day handling
 

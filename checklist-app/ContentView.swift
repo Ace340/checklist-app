@@ -20,22 +20,38 @@ fileprivate func slotName(cadence: Cadence, phase: Phase?) -> String {
     }
 }
 
+// MARK: - Root: login gate
+
+/// Root view. Shows `LoginView` when no current user is signed in (ADR 0002);
+/// otherwise shows the area list. Splitting here (instead of inside
+/// `AreaListView`) keeps the auth gate visible at the top of the view tree
+/// where debugging is easiest.
+struct ContentView: View {
+    @Environment(AuthStore.self) private var authStore
+    @Environment(\.modelContext) private var modelContext
+
+    var body: some View {
+        if authStore.currentUser(in: modelContext) != nil {
+            AreaListView()
+        } else {
+            LoginView()
+        }
+    }
+}
+
 // MARK: - Level 1: Area picker (Home)
 
 /// Home screen: two cards — FOH and BOH (the `Area`s). Primary grouping.
-struct ContentView: View {
+private struct AreaListView: View {
+    @Environment(AuthStore.self) private var authStore
     @Environment(\.modelContext) private var modelContext
 
     /// The current business day = the one `BusinessDay` with `closedAt == nil`.
     @Query(filter: #Predicate<BusinessDay> { $0.closedAt == nil })
     private var openBusinessDays: [BusinessDay]
 
-    /// Manager presence gates the Finish Day action. TODO: gate on a real
-    /// current-user session once auth exists (see checklist_appApp.swift).
-    @Query(filter: #Predicate<User> { $0.roleRawValue == "manager" })
-    private var managers: [User]
-
     private var currentBusinessDay: BusinessDay? { openBusinessDays.first }
+    private var currentUser: User? { authStore.currentUser(in: modelContext) }
 
     var body: some View {
         NavigationStack {
@@ -50,11 +66,14 @@ struct ContentView: View {
             }
             .navigationTitle("Checklists")
             .toolbar {
-                if !managers.isEmpty {
-                    ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    if currentUser?.isManager == true {
                         Button("Finish Day", action: finishDay)
                             .disabled(currentBusinessDay == nil)
                     }
+                }
+                ToolbarItem(placement: .topBarLeading) {
+                    SwitchUserButton(userName: currentUser?.name ?? "")
                 }
             }
         }
@@ -81,6 +100,27 @@ private struct AreaRow: View {
             Text(area.subtitle)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// "Signed in as {name}. Tap to switch." Signs out on tap; the root
+/// `ContentView` flips back to `LoginView` because `currentUser` becomes nil.
+private struct SwitchUserButton: View {
+    @Environment(AuthStore.self) private var authStore
+    let userName: String
+
+    var body: some View {
+        Button {
+            authStore.signOut()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "person.crop.circle.badge.checkmark")
+                Text(userName)
+                    .font(.caption)
+                    .lineLimit(1)
+            }
+            .foregroundStyle(.secondary)
         }
     }
 }
@@ -119,6 +159,7 @@ private struct DutyListView: View {
     let cadence: Cadence
     let phase: Phase?
 
+    @Environment(AuthStore.self) private var authStore
     @Environment(\.modelContext) private var modelContext
 
     /// All duties; filtered to this checklist in Swift. Filtering on a nil-vs-
@@ -133,6 +174,7 @@ private struct DutyListView: View {
     @State private var showingAddDuty = false
 
     private var currentBusinessDay: BusinessDay? { openBusinessDays.first }
+    private var currentUser: User? { authStore.currentUser(in: modelContext) }
 
     private var duties: [TaskItem] {
         allDuties
@@ -209,8 +251,10 @@ private struct DutyListView: View {
     // MARK: Mutations
 
     /// Tap a duty to log completion; tap a done duty to undo (remove the
-    /// current-period log). The new log is attributed to the current business
-    /// day so a completion at 1:30am Sunday still belongs to Saturday's day.
+    /// current-period log). The new log is attributed to the current
+    /// business day (so a completion at 1:30am Sunday still belongs to
+    /// Saturday's day) and to the current user (ADR 0002 — every log
+    /// carries attribution for the audit trail).
     private func toggle(_ duty: TaskItem) {
         let calendar = Calendar.current
         switch status(of: duty) {
@@ -226,6 +270,7 @@ private struct DutyListView: View {
             let log = CompletionLog()
             log.duty = duty
             log.businessDay = current
+            log.completedBy = currentUser
             modelContext.insert(log)
         }
         try? modelContext.save()
@@ -386,4 +431,5 @@ private struct AddDutySheet: View {
             User.self,
             BusinessDay.self,
         ], inMemory: true)
+        .environment(AuthStore())
 }

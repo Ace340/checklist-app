@@ -4,7 +4,65 @@ Handoff for the restaurant checklists feature. This doc is self-contained: read 
 
 ---
 
-## 🔖 Session handoff — 2026-07-20 (RESUME HERE)
+## 🔖 Session handoff — 2026-07-20 evening (RESUME HERE)
+
+**One-line status:** Roadmap Feature #1 (Auth & current-user session) **done**. PIN-based login is live, `CompletionLog.completedBy` is populated on every new log, Finish Day gates on the signed-in manager. **44/44 tests green** (18 DutyStatus + 13 PinHasher + 13 AuthStore). ADR 0002 written. Next: pick another roadmap item — Feature #5 (history & log viewer) is now fully unblocked because every new log carries attribution.
+
+### Exact resume action
+1. Pick the next feature from `docs/ROADMAP.md`. Suggested natural next steps:
+   - **Feature #5 — Business-day history & log viewer:** the audit trail is now rich (every new log has `completedBy`), but there's no UI to read it. This is the pay-off feature for both ADR #1 and ADR #0002.
+   - **Feature #2 — Forgotten finish-day handling:** still relevant; benefits from auth (warn *the manager* specifically).
+   - **Staff-management UI** (ADR 0002 deferred follow-up): today the only way to add/edit/remove users or change PINs is via direct store edit. A first cut would be a manager-only settings screen.
+2. Optional: tag the milestone (`git tag auth-session-complete`).
+3. Optional housekeeping: address the 9 pre-existing Swift 6 actor-isolation warnings in `DutyStatusTests.swift` if you want a fully clean Swift 6 build.
+
+### What landed this session
+- **`docs/adr/0002-auth-and-current-user-session.md`** (NEW) — captures every decision: 4-digit PIN, shared device, one-PIN-per-session, single-restaurant, `AuthStore` in `.environment`, PIN persisted as SHA-256 + per-user salt with honest threat model (casual observation defense; iOS sandbox is the real boundary).
+- **`checklist-app/Auth/PinHasher.swift`** (NEW) — pure, framework-free PIN helpers (`isValidPin`, `generateSalt`, `hashPin`) + `PinError.invalidFormat`. Mirrors the `DutyStatus.swift` pattern.
+- **`checklist-app/Auth/AuthStore.swift`** (NEW) — `@Observable` session. Holds `currentUserID: UUID?`; persists via `UserDefaults`; `signIn(user:pin:)` / `signOut()` / `currentUser(in:)`. The PIN itself is never persisted.
+- **`checklist-app/Models/User.swift`** (MODIFIED) — added `id: UUID` (stable for session persistence — `PersistentIdentifier` isn't `Codable`), `pinSalt: Data`, `pinHash: String?`, `setPin(_:)`, `matchesPin(_:)`, `hasPin`. Existing `init(name:role:createdAt:)` signature preserved (new params have defaults).
+- **`checklist-app/ContentView.swift`** (MODIFIED) — split into `ContentView` (login gate: shows `LoginView` when no current user, else `AreaListView`) + `AreaListView` (was `ContentView`). Finish Day gates on `authStore.currentUser?.isManager`. New `SwitchUserButton` in leading toolbar. `toggle()` now sets `log.completedBy = currentUser` on every new log.
+- **`checklist-app/LoginView.swift`** (NEW) — pick-name → enter-PIN flow. Auto-submits on the 4th digit (no Sign In button to hunt for with wet hands). Wrong-PIN shake-style retry inline.
+- **`checklist-app/checklist_appApp.swift`** (MODIFIED) — dropped default-manager seed; replaced with first-run seed of `Manager` (PIN `0000`) + `Staff` (PIN `1111`) per ADR 0002. Wired `AuthStore` into `.environment`.
+- **`checklist-appTests/PinHasherTests.swift`** (NEW) — 13 tests: validation rules, hash determinism, salt uniqueness, output shape.
+- **`checklist-appTests/AuthStoreTests.swift`** (NEW) — 13 tests: sign-in success/failure, sign-out, session persistence across `AuthStore` instances (simulated relaunch via shared `UserDefaults`), deleted-user-logs-out, user model PIN coverage. `@MainActor` (needed for `ModelContainer.mainContext` in Swift 6 mode).
+
+### Verification
+`xcodebuild test -scheme checklist-app -destination 'platform=iOS Simulator,name=iPhone 17'` → **TEST SUCCEEDED**, 44/44 cases pass, zero new warnings (only the pre-existing 9 DutyStatus Swift-6 actor-isolation notes remain).
+
+### How to use the new auth
+1. Launch the app → LoginView appears (no session yet).
+2. Tap **Manager** → enter `0000` → area list appears. Toolbar shows Finish Day (manager) + Switch User (signed-in-as).
+3. Tap **Switch User** → back to LoginView (session cleared).
+4. Tap **Staff** → enter `1111` → area list appears. Finish Day button hidden (not manager).
+5. Tap any duty → a `CompletionLog` is inserted with `completedBy` set to the current user. (Previously: `completedBy` stayed nil — half the audit value of ADR #1 was lost.)
+
+### Debugging notes (don't re-discover)
+- **`ModelContainer.mainContext` is `@MainActor`-isolated** in Swift 6 mode (and in Swift 5 with the `GlobalActorIsolatedTypesUsability` upcoming-feature flag, which this project has enabled). Test classes touching it must be `@MainActor` — see `AuthStoreTests.swift`. The pre-existing `DutyStatusTests.swift` does not touch the context, which is why it works without the annotation (and produces only warnings for the unrelated `DutyStatus: Equatable` main-actor-isolated conformance).
+- **SwiftData `#Predicate` on `UUID` equality works natively** — `$0.id == id` compiles and runs fine. The predicate gotchas in this project are with enums (worked around via `roleRawValue` / `weekdayRawValue`); UUID is a value attribute, no workaround needed.
+- **`SecureField` + `.numberPad` + `.textContentType(.oneTimeCode)`** is the right combo for a PIN entry on iOS — `oneTimeCode` triggers iOS to auto-fill from SMS where applicable (not used here, but it suppresses the strong-password autofill suggestion which would be wrong for a 4-digit PIN).
+- **`@State private var authStore = AuthStore()`** in `checklist_appApp` is the SwiftUI-idiomatic owner of an `@Observable` environment object. Don't use `@StateObject` (that's for `ObservableObject`).
+
+### Open design decisions still flagged (not blocking)
+- **Staff-management UI** (ADR 0002 follow-up): only way to add/edit/remove users or change PINs is via direct store edit. A first cut manager-only settings screen would unblock production deployment.
+- **Auto sign-out on idle** (ADR 0002 follow-up): a shared device left signed in misattributes logs. Restaurants vary on whether they want this. Defer until asked.
+- **Forgotten finish-day:** unchanged from prior handoff — if nobody hits Finish Day, next morning's logs attach to yesterday's open business day. Now *also* could target the warning to "the manager" specifically via auth.
+- **Finish-day with incomplete closing duties:** still allowed silently. Product decision still pending.
+- **Pre-existing Swift 6 actor-isolation warnings** in `DutyStatusTests.swift` (9 warnings). Unchanged from prior handoff; address in a separate Swift 6 migration pass if desired.
+
+### Phase status
+| Phase | Status |
+|-------|--------|
+| Phase 0 — pure scheduling | ✅ Done (18/18) |
+| Phase 1 — SwiftData models | ✅ Done |
+| Phase 2 — UI | ✅ Done |
+| Tests — XCTest port | ✅ 18/18 green |
+| Phase 3 — `/code-review` + fixes | ✅ Done (`4094f62`) |
+| **Feature #1 — Auth & current-user session** | ✅ **Done** (44/44 green, ADR 0002 written) |
+
+---
+
+## 🔖 Session handoff — 2026-07-20 (morning)
 
 **One-line status:** Phase 3 complete — `/code-review` skill executed, all hard findings addressed, 18/18 tests green. Committed (`4094f62`) and pushed. Next: pick an open design decision below, or start the next feature (auth/session is the natural next step — it unblocks real finish-day gating).
 
