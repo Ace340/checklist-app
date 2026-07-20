@@ -23,7 +23,9 @@ final class CompletionLog {
     var note: String?
 
     /// The duty this log records (to-one inverse). Plain optional.
-    var task: TaskItem?
+    /// Named `duty` per CONTEXT.md's domain language (`task` is on the
+    /// avoid list — collides with Swift's concurrency `Task`).
+    var duty: TaskItem?
 
     /// The user who completed the duty (to-one inverse). Plain optional;
     /// `.nullify` on the User side keeps this log even if the user is deleted.

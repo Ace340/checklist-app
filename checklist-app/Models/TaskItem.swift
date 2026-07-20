@@ -42,12 +42,36 @@ final class TaskItem {
 
     /// Completion history for this duty.
     /// `.cascade`: deleting a duty also deletes its logs.
-    @Relationship(deleteRule: .cascade, inverse: \CompletionLog.task)
+    @Relationship(deleteRule: .cascade, inverse: \CompletionLog.duty)
     var logs: [CompletionLog] = []
 
     init(title: String, order: Int, weekday: Weekday? = nil) {
         self.title = title
         self.order = order
         self.weekday = weekday
+    }
+}
+
+extension TaskItem {
+    /// Whether this daily duty has been completed in the given business day
+    /// (ADR #1 — completion state is derived from logs, never stored on the
+    /// duty itself).
+    ///
+    /// Compared by SwiftData identity: within a single `mainContext`, the
+    /// same row returns the same instance, so `===` is correct. The
+    /// `businessDay != nil` guard avoids a false positive on orphaned logs
+    /// whose `businessDay` was nullified by a `BusinessDay` deletion.
+    ///
+    /// Lives here (not on the View) so the XCTest target can cover ADR #1's
+    /// derivation with an in-memory SwiftData container.
+    func isDone(in businessDay: BusinessDay) -> Bool {
+        logs.contains { $0.businessDay != nil && $0.businessDay === businessDay }
+    }
+
+    /// Whether this weekly duty has been completed in the Monday-start week
+    /// containing `now` (ADR #1).
+    func isDoneThisWeek(asOf now: Date, calendar: Calendar) -> Bool {
+        let interval = mondayStartWeekInterval(containing: now, calendar: calendar)
+        return logs.contains { interval.contains($0.timestamp) }
     }
 }

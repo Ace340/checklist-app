@@ -22,16 +22,16 @@ final class DutyStatusTests: XCTestCase {
 
     private var calendar: Calendar { Self.utcCalendar }
 
-    private func day(_ y: Int, _ m: Int, _ d: Int) -> Date {
+    private func date(y: Int, m: Int, d: Int) -> Date {
         calendar.date(from: DateComponents(year: y, month: m, day: d))!
     }
 
     // Anchors (2026): Mon=Jul13, Tue=Jul14, Wed=Jul15, Thu=Jul16, Sun=Jul19
-    private var monday: Date { day(2026, 7, 13) }
-    private var tuesday: Date { day(2026, 7, 14) }
-    private var wednesday: Date { day(2026, 7, 15) }
-    private var thursday: Date { day(2026, 7, 16) }
-    private var sunday: Date { day(2026, 7, 19) }
+    private var monday: Date { date(y: 2026, m: 7, d: 13) }
+    private var tuesday: Date { date(y: 2026, m: 7, d: 14) }
+    private var wednesday: Date { date(y: 2026, m: 7, d: 15) }
+    private var thursday: Date { date(y: 2026, m: 7, d: 16) }
+    private var sunday: Date { date(y: 2026, m: 7, d: 19) }
 
     // MARK: - Slice 1: weekly duty on its own day, not done, is DUE
 
@@ -152,7 +152,7 @@ final class DutyStatusTests: XCTestCase {
     }
 
     func testSameWeek_sundayToNextMonday_isDifferentWeek() {
-        let nextMonday = day(2026, 7, 20)
+        let nextMonday = date(y: 2026, m: 7, d: 20)
         XCTAssertFalse(
             sameWeek(sunday, nextMonday, calendar: calendar),
             "Sun Jul19 & Mon Jul20 are different weeks"
@@ -160,7 +160,7 @@ final class DutyStatusTests: XCTestCase {
     }
 
     func testSameWeek_mondayToPrevMonday_isDifferentWeek() {
-        let prevMonday = day(2026, 7, 6)
+        let prevMonday = date(y: 2026, m: 7, d: 6)
         XCTAssertFalse(
             sameWeek(monday, prevMonday, calendar: calendar),
             "Mon Jul13 & Mon Jul6 are different weeks"

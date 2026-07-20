@@ -8,6 +8,18 @@
 import SwiftUI
 import SwiftData
 
+/// Short time-slot label ("Opening" / "Closing" / "Weekly") shared by the
+/// navigation title and the default checklist title. Extracted so the two
+/// sites can't drift.
+fileprivate func slotName(cadence: Cadence, phase: Phase?) -> String {
+    switch (cadence, phase) {
+    case (.daily, .opening): return "Opening"
+    case (.daily, .closing): return "Closing"
+    case (.weekly, _): return "Weekly"
+    default: return "Duties"
+    }
+}
+
 // MARK: - Level 1: Area picker (Home)
 
 /// Home screen: two cards — FOH and BOH (the `Area`s). Primary grouping.
@@ -65,8 +77,8 @@ private struct AreaRow: View {
 
     var body: some View {
         VStack(alignment: .leading) {
-            Text(AreaView.title(area)).font(.headline)
-            Text(AreaView.subtitle(area))
+            Text(area.displayName).font(.headline)
+            Text(area.subtitle)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -96,21 +108,7 @@ private struct AreaView: View {
                 Label("Weekly", systemImage: "calendar")
             }
         }
-        .navigationTitle(AreaView.title(area))
-    }
-
-    static func title(_ area: Area) -> String {
-        switch area {
-        case .foh: return "FOH"
-        case .boh: return "BOH"
-        }
-    }
-
-    static func subtitle(_ area: Area) -> String {
-        switch area {
-        case .foh: return "Front of House"
-        case .boh: return "Back of House"
-        }
+        .navigationTitle(area.displayName)
     }
 }
 
@@ -140,7 +138,12 @@ private struct DutyListView: View {
         allDuties
             .filter { duty in
                 guard let list = duty.checklist else { return false }
-                return list.area == area && list.cadence == cadence && list.phase == phase
+                guard list.area == area && list.cadence == cadence && list.phase == phase else { return false }
+                // Hide weekly duties whose weekday hasn't arrived yet this
+                // week (`DutyStatus.shouldSurface`). The other half of this
+                // rule — preventing early taps — is automatic: a hidden row
+                // can't be tapped. See ADR #1 and CONTEXT.md.
+                return shouldSurface(status(of: duty))
             }
             .sorted { $0.order < $1.order }
     }
@@ -176,51 +179,31 @@ private struct DutyListView: View {
         }
     }
 
-    private var navigationTitle: String {
-        switch (cadence, phase) {
-        case (.daily, .opening): return "Opening"
-        case (.daily, .closing): return "Closing"
-        case (.weekly, _): return "Weekly"
-        default: return "Duties"
-        }
-    }
+    private var navigationTitle: String { slotName(cadence: cadence, phase: phase) }
 
     // MARK: Derived state (ADR #1 — never stored)
 
     /// Derives the scheduling status of a duty from its logs via the
-    /// `DutyStatus` seam in `Scheduling/DutyStatus.swift`.
+    /// `DutyStatus` seam in `Scheduling/DutyStatus.swift`. The ADR #1
+    /// derivation (`isDone(in:)` / `isDoneThisWeek(asOf:calendar:)`) lives
+    /// on `TaskItem` so the XCTest target can cover it with an in-memory
+    /// SwiftData container.
     private func status(of duty: TaskItem) -> DutyStatus {
         let calendar = Calendar.current
         switch cadence {
         case .daily:
-            return dailyDutyStatus(completedInCurrentBusinessDay: doneInCurrentBusinessDay(duty))
+            let done = currentBusinessDay.map { duty.isDone(in: $0) } ?? false
+            return dailyDutyStatus(completedInCurrentBusinessDay: done)
         case .weekly:
             // A weekly duty without a weekday is malformed; treat as pending.
             guard let scheduled = duty.weekday else { return .pending }
             return weeklyDutyStatus(
                 scheduled: scheduled,
                 now: .now,
-                completedThisWeek: doneThisWeek(duty, calendar: calendar),
+                completedThisWeek: duty.isDoneThisWeek(asOf: .now, calendar: calendar),
                 calendar: calendar
             )
         }
-    }
-
-    /// Daily "done" ↔ a log exists for this duty whose `businessDay` is the
-    /// current open business day. Compared by identity — within a single
-    /// `mainContext` SwiftData returns the same instance for a given row.
-    private func doneInCurrentBusinessDay(_ duty: TaskItem) -> Bool {
-        guard let current = currentBusinessDay else { return false }
-        return duty.logs.contains { log in
-            log.businessDay != nil && log.businessDay === current
-        }
-    }
-
-    /// Weekly "done this week" ↔ a log exists whose `timestamp` falls inside
-    /// the Monday-start week containing now.
-    private func doneThisWeek(_ duty: TaskItem, calendar: Calendar) -> Bool {
-        let interval = mondayStartWeekInterval(containing: .now, calendar: calendar)
-        return duty.logs.contains { interval.contains($0.timestamp) }
     }
 
     // MARK: Mutations
@@ -234,9 +217,15 @@ private struct DutyListView: View {
         case .done:
             undoCompletion(of: duty, calendar: calendar)
         default:
+            // Guard required: a log without a `businessDay` reference is
+            // silently invisible forever — the derivation filters out
+            // nil-attributed logs. This window exists transiently if
+            // `finishDay` just ran and the @Query hasn't refreshed, or if
+            // `seedOnLaunch` hasn't fired yet.
+            guard let current = currentBusinessDay else { return }
             let log = CompletionLog()
-            log.task = duty
-            log.businessDay = currentBusinessDay
+            log.duty = duty
+            log.businessDay = current
             modelContext.insert(log)
         }
         try? modelContext.save()
@@ -269,74 +258,46 @@ private struct DutyRow: View {
     let onToggle: () -> Void
 
     var body: some View {
+        let style = DutyStatusStyle.style(for: status)
         Button(action: onToggle) {
             HStack {
-                Image(systemName: iconName)
-                    .foregroundStyle(iconColor)
+                Image(systemName: style.icon)
+                    .foregroundStyle(style.iconColor)
                     .frame(width: 24)
                 VStack(alignment: .leading) {
                     Text(duty.title)
                     if duty.checklist?.cadence == .weekly, let day = duty.weekday {
-                        Text(DutyRow.weekdayLabel(day))
+                        Text(day.displayName)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
                 Spacer()
-                Text(statusLabel)
+                Text(style.label)
                     .font(.caption)
-                    .foregroundStyle(statusColor)
+                    .foregroundStyle(style.labelColor)
             }
         }
         .buttonStyle(.plain)
     }
+}
 
-    private var iconName: String {
+/// UI presentation for a single `DutyStatus` — one switch instead of four
+/// parallel ones (icon, icon color, label, label color). Collocated so a new
+/// `DutyStatus` case forces one compiler error here, not four.
+private struct DutyStatusStyle {
+    let icon: String
+    let iconColor: Color
+    let label: String
+    let labelColor: Color
+
+    static func style(for status: DutyStatus) -> DutyStatusStyle {
         switch status {
-        case .done: return "checkmark.circle.fill"
-        case .pending: return "circle"
-        case .due: return "circle.dotted"
-        case .overdue: return "exclamationmark.circle.fill"
-        case .notYetDue: return "circle.dashed"
-        }
-    }
-
-    private var iconColor: Color {
-        switch status {
-        case .done: return .green
-        case .overdue: return .red
-        case .due: return .orange
-        case .pending, .notYetDue: return .secondary
-        }
-    }
-
-    private var statusLabel: String {
-        switch status {
-        case .done: return "Done"
-        case .pending: return "Pending"
-        case .due: return "Due"
-        case .overdue: return "Overdue"
-        case .notYetDue: return "Not yet due"
-        }
-    }
-
-    private var statusColor: Color {
-        switch status {
-        case .overdue: return .red
-        case .due: return .orange
-        default: return .secondary
-        }
-    }
-
-    static func weekdayLabel(_ day: Weekday) -> String {
-        switch day {
-        case .monday: return "Monday"
-        case .tuesday: return "Tuesday"
-        case .wednesday: return "Wednesday"
-        case .thursday: return "Thursday"
-        case .friday: return "Friday"
-        case .saturday: return "Saturday"
-        case .sunday: return "Sunday"
+        case .done:      return .init(icon: "checkmark.circle.fill",       iconColor: .green,     label: "Done",         labelColor: .secondary)
+        case .pending:   return .init(icon: "circle",                      iconColor: .secondary, label: "Pending",      labelColor: .secondary)
+        case .due:       return .init(icon: "circle.dotted",               iconColor: .orange,    label: "Due",          labelColor: .orange)
+        case .overdue:   return .init(icon: "exclamationmark.circle.fill", iconColor: .red,       label: "Overdue",      labelColor: .red)
+        case .notYetDue: return .init(icon: "circle.dashed",               iconColor: .secondary, label: "Not yet due",  labelColor: .secondary)
         }
     }
 }
@@ -363,7 +324,7 @@ private struct AddDutySheet: View {
                     if cadence == .weekly {
                         Picker("Day", selection: $weekday) {
                             ForEach(Weekday.allCases, id: \.self) { day in
-                                Text(DutyRow.weekdayLabel(day)).tag(day)
+                                Text(day.displayName).tag(day)
                             }
                         }
                     }
@@ -412,12 +373,7 @@ private struct AddDutySheet: View {
     }
 
     private var defaultChecklistTitle: String {
-        switch (cadence, phase) {
-        case (.daily, .opening): return "\(AreaView.title(area)) Opening"
-        case (.daily, .closing): return "\(AreaView.title(area)) Closing"
-        case (.weekly, _): return "\(AreaView.title(area)) Weekly"
-        default: return AreaView.title(area)
-        }
+        "\(area.displayName) \(slotName(cadence: cadence, phase: phase))"
     }
 }
 

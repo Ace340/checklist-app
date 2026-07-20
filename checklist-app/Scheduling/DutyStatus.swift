@@ -23,6 +23,21 @@ enum Weekday: Int, Comparable, CaseIterable {
     static func < (lhs: Weekday, rhs: Weekday) -> Bool { lhs.rawValue < rhs.rawValue }
 }
 
+extension Weekday {
+    /// Localized display name for UI.
+    var displayName: String {
+        switch self {
+        case .monday: return "Monday"
+        case .tuesday: return "Tuesday"
+        case .wednesday: return "Wednesday"
+        case .thursday: return "Thursday"
+        case .friday: return "Friday"
+        case .saturday: return "Saturday"
+        case .sunday: return "Sunday"
+        }
+    }
+}
+
 /// The scheduling status of a duty, derived — never stored. See ADR #1.
 ///
 /// - `pending`: a daily duty not yet done in the current business day.

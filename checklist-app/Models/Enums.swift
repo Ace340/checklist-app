@@ -24,7 +24,7 @@ enum Cadence: String, Codable, CaseIterable {
     case weekly
 }
 
-/// The stage of the service day a daily checklist covers — Opening or Closing.
+/// The part of the service day a daily checklist covers — Opening or Closing.
 /// Nil for weekly checklists (weekly duties have no phase; they have a weekday).
 /// Avoid: "stage" (in restaurants a *stage* is an unpaid kitchen intern).
 /// See CONTEXT.md.
@@ -39,4 +39,25 @@ enum Phase: String, Codable, CaseIterable {
 enum UserRole: String, Codable, CaseIterable {
     case staff
     case manager
+}
+
+extension Area {
+    /// Canonical short label for UI (e.g. "FOH").
+    var displayName: String {
+        switch self {
+        case .foh: return "FOH"
+        case .boh: return "BOH"
+        }
+    }
+
+    /// Canonical full-form expansion. This is the glossary term itself
+    /// (CONTEXT.md defines FOH as "Front of House") — the *Avoid* lists in
+    /// CONTEXT.md target colloquial synonyms (e.g. "the front"), not this
+    /// canonical form.
+    var subtitle: String {
+        switch self {
+        case .foh: return "Front of House"
+        case .boh: return "Back of House"
+        }
+    }
 }
