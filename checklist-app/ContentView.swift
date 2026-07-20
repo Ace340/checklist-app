@@ -22,16 +22,26 @@ fileprivate func slotName(cadence: Cadence, phase: Phase?) -> String {
 
 // MARK: - Root: login gate
 
-/// Root view. Shows `LoginView` when no current user is signed in (ADR 0002);
-/// otherwise shows the area list. Splitting here (instead of inside
-/// `AreaListView`) keeps the auth gate visible at the top of the view tree
-/// where debugging is easiest.
+/// Root view. Three-way switch:
+///   1. No users in the store → `OnboardingView` (first launch only — ADR 0003)
+///   2. Users exist but no current session → `LoginView` (ADR 0002)
+///   3. Signed in → `AreaListView`
+///
+/// Splitting here (instead of inside `AreaListView`) keeps the auth and
+/// onboarding gates visible at the top of the view tree where debugging
+/// is easiest. First-launch is store-derived (a `@Query` count), not a
+/// UserDefaults flag — a defaults wipe can't strand the app on onboarding
+/// with users already present.
 struct ContentView: View {
     @Environment(AuthStore.self) private var authStore
     @Environment(\.modelContext) private var modelContext
 
+    @Query private var allUsers: [User]
+
     var body: some View {
-        if authStore.currentUser(in: modelContext) != nil {
+        if allUsers.isEmpty {
+            OnboardingView()
+        } else if authStore.currentUser(in: modelContext) != nil {
             AreaListView()
         } else {
             LoginView()
@@ -49,6 +59,8 @@ private struct AreaListView: View {
     /// The current business day = the one `BusinessDay` with `closedAt == nil`.
     @Query(filter: #Predicate<BusinessDay> { $0.closedAt == nil })
     private var openBusinessDays: [BusinessDay]
+
+    @State private var showingStaffManagement = false
 
     private var currentBusinessDay: BusinessDay? { openBusinessDays.first }
     private var currentUser: User? { authStore.currentUser(in: modelContext) }
@@ -73,8 +85,23 @@ private struct AreaListView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarLeading) {
-                    SwitchUserButton(userName: currentUser?.name ?? "")
+                    HStack(spacing: 12) {
+                        SwitchUserButton(userName: currentUser?.name ?? "")
+                        // Manager-only staff directory (ADR 0003). Hidden for
+                        // staff — they're operators, not user-administrators.
+                        if currentUser?.isManager == true {
+                            Button {
+                                showingStaffManagement = true
+                            } label: {
+                                Image(systemName: "person.crop.square.filled.and.at.rectangle")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
                 }
+            }
+            .sheet(isPresented: $showingStaffManagement) {
+                StaffManagementView()
             }
         }
     }
@@ -210,9 +237,14 @@ private struct DutyListView: View {
         }
         .navigationTitle(navigationTitle)
         .toolbar {
-            ToolbarItem {
-                Button(action: { showingAddDuty = true }) {
-                    Label("Add Duty", systemImage: "plus")
+            // ADR 0003: duty-catalog edits are manager-only. The button is
+            // hidden (not greyed) for staff — cleaner during service, no
+            // "why can't I tap that?" friction.
+            if currentUser?.isManager == true {
+                ToolbarItem {
+                    Button(action: { showingAddDuty = true }) {
+                        Label("Add Duty", systemImage: "plus")
+                    }
                 }
             }
         }
@@ -354,6 +386,7 @@ private struct AddDutySheet: View {
     let cadence: Cadence
     let phase: Phase?
 
+    @Environment(AuthStore.self) private var authStore
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Query private var checklists: [Checklist]
@@ -383,6 +416,16 @@ private struct AddDutySheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") { addDuty() }
                         .disabled(trimmedTitle.isEmpty)
+                }
+            }
+            // Defense in depth (ADR 0003): the + button is hidden for
+            // non-managers, but if the sheet ever surfaces via a different
+            // path (programmatic presentation, navigation bug), bail out
+            // rather than let a staff user create a duty.
+            .onAppear {
+                guard authStore.currentUser(in: modelContext)?.isManager == true else {
+                    dismiss()
+                    return
                 }
             }
         }

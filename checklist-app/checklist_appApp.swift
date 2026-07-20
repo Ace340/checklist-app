@@ -57,31 +57,20 @@ struct checklist_appApp: App {
     }
 }
 
-/// Ensures the invariants the UI relies on hold before any view loads.
+/// Ensures the "current business day" invariant holds before any view
+/// loads: the one `BusinessDay` with `closedAt == nil`. Derived daily
+/// state needs an open business day to attribute logs to; without it the
+/// first tap on a duty would be silently invisible.
 ///
-/// - The "current business day" is the one `BusinessDay` with `closedAt == nil`.
-///   Seed one if none is open (derived daily state needs a business day to
-///   attribute logs to).
-/// - On first launch (no `User` rows yet), seed demo users per ADR 0002:
-///   one manager (PIN `0000`) and one staff user (PIN `1111`). These PINs
-///   are intentionally documented in the ADR — production deployments will
-///   replace them via a future staff-management UI.
+/// User seeding was removed in ADR 0003 — the first manager is now created
+/// by `OnboardingView` on first launch, and subsequent users are added via
+/// `StaffManagementView`. No `User` rows exist until onboarding runs.
 private func seedOnLaunch(into context: ModelContext) {
     let openDayDescriptor = FetchDescriptor<BusinessDay>(
         predicate: #Predicate { $0.closedAt == nil }
     )
     if (try? context.fetchCount(openDayDescriptor)) == 0 {
         context.insert(BusinessDay())
-    }
-
-    let userDescriptor = FetchDescriptor<User>()
-    if (try? context.fetchCount(userDescriptor)) == 0 {
-        let manager = User(name: "Manager", role: .manager)
-        try? manager.setPin("0000")
-        let staff = User(name: "Staff", role: .staff)
-        try? staff.setPin("1111")
-        context.insert(manager)
-        context.insert(staff)
     }
 
     try? context.save()

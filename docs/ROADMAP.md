@@ -4,9 +4,9 @@ What to build next, in priority order. Each feature is sized so it can land in o
 
 This doc is a sibling to `NEXT-STEPS.md` (session-by-session handoff) and `docs/adr/` (architecture decisions). The domain language is defined in `CONTEXT.md`.
 
-## Current state (Feature #1 — auth/session — complete)
+## Current state (Feature #1 + #7 — auth/session + staff management — complete)
 
-The core loop works: 6 checklists (Area × Cadence × Phase), tap-to-complete with derived state, manager finish-day, full audit trail in `CompletionLog` — now including **who** completed each duty (Feature #1). PIN-based login, shared-device session, finish-day gated on the signed-in manager. 44/44 tests green. What's missing for a real restaurant to use this daily is below.
+The core loop works: 6 checklists (Area × Cadence × Phase), tap-to-complete with derived state, manager finish-day, full audit trail in `CompletionLog` — now including **who** completed each duty (Feature #1). PIN-based login via onboarding wizard (no seeded demo users), shared-device session, finish-day gated on the signed-in manager, manager-only staff directory & duty editing (Feature #7). 66/66 tests green. What's missing for a real restaurant to use this daily is below.
 
 ## Priority features
 
@@ -14,12 +14,24 @@ The core loop works: 6 checklists (Area × Cadence × Phase), tap-to-complete wi
 
 **What:** Replace the seeded default manager with a real login / current-user session.
 
-**Status:** Shipped. PIN-based (4 digits), shared device, one PIN per session, `@Observable AuthStore` in `.environment`, PIN stored as SHA-256 + per-user salt. `CompletionLog.completedBy` is now populated on every new log; Finish Day gates on the signed-in manager. See `docs/adr/0002-auth-and-current-user-session.md`. 44/44 tests green.
+**Status:** Shipped. PIN-based (4 digits), shared device, one PIN per session, `@Observable AuthStore` in `.environment`, PIN stored as SHA-256 + per-user salt. `CompletionLog.completedBy` is now populated on every new log; Finish Day gates on the signed-in manager. See `docs/adr/0002-auth-and-current-user-session.md`. 44/44 tests green at the time; the rolling total is now 66/66 (Feature #7 added 22).
 
 **Deferred follow-ups (not blocking, captured in ADR 0002):**
-- Staff-management UI (add/edit/remove users, change PINs) — currently seed-only.
+- ~~Staff-management UI~~ — ✅ Shipped as Feature #7 below.
+- ~~Forgotten-PIN recovery~~ — ✅ Shipped: managers reset any non-self user's PIN via the Staff screen (Feature #7).
 - Auto sign-out on idle for shared-device hygiene.
-- Forgotten-PIN recovery flow.
+
+### 7. Staff management & duty permissions ✅ DONE (2026-07-20)
+
+**What:** Manager-only UI for managing the user directory (add, rename, promote/demote, reset PIN, delete users) and manager-only editing of the duty catalog (add duties). Replaces the seeded demo users with a first-launch onboarding wizard that creates the first manager.
+
+**Status:** Shipped. Pure permission helpers in `StaffManagement.swift` (`canCreateUser`/`canEdit`/`canPromote`/`canDemote`/`canDelete`) backed by 19 unit tests; `StaffManagementView` (list/add/edit/delete/reset-PIN); `OnboardingView` (first-launch wizard); gear icon in `AreaListView` toolbar (manager-only); `+` button on `DutyListView` hidden for staff with defense-in-depth `onAppear` check in `AddDutySheet`. Self-protection (no demote/delete self) and last-manager protection enforced. See `docs/adr/0003-staff-management-and-duty-permissions.md`. 66/66 tests green.
+
+**Deferred follow-ups (captured in ADR 0003):**
+- Bulk staff import (CSV / paste-a-list) — real restaurants onboard 10-30 staff at once.
+- Audit trail of management actions ("who promoted whom," "who reset whose PIN") — would need a separate `ManagementActionLog` aggregate.
+- Required PIN complexity / rotation.
+- Duty edit/delete UI — the *permission* is locked here; the UI is its own piece of work.
 
 ### 2. Forgotten finish-day handling
 

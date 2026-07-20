@@ -4,7 +4,67 @@ Handoff for the restaurant checklists feature. This doc is self-contained: read 
 
 ---
 
-## 🔖 Session handoff — 2026-07-20 evening (RESUME HERE)
+## 🔖 Session handoff — 2026-07-20 late (RESUME HERE)
+
+**One-line status:** Roadmap Feature #7 (Staff management & duty permissions) **done**. First-launch onboarding wizard replaces seeded demo users; managers can add/rename/promote/demote/reset-PIN/delete users via a new Staff screen; `+` duty button is hidden for staff. Forgotten-PIN recovery (ADR 0002 follow-up) closed as a side effect. **66/66 tests green** (18 DutyStatus + 13 PinHasher + 13 AuthStore + 22 StaffManagement). ADR 0003 written. Work uncommitted on `main`.
+
+### Exact resume action
+1. **Review the diff and commit** (suggested message: `feat(staff): manager-only staff management + duty permissions (Feature #7, ADR 0003)`). Untracked: `Onboarding/OnboardingView.swift`, `StaffManagement/StaffManagement.swift`, `StaffManagement/StaffManagementView.swift`, `docs/adr/0003-*.md`, `checklist-appTests/StaffManagementTests.swift`. Modified: `ContentView.swift`, `checklist_appApp.swift`, `docs/ROADMAP.md`, `docs/NEXT-STEPS.md`.
+2. **Run the app** to sanity-check the onboarding flow (delete from simulator first to trigger first-launch): name → PIN → confirm → land signed-in as manager → tap gear icon → add a staff user → switch user → verify `+` button is hidden for staff.
+3. Optional: run `/code-review` skill against the new code.
+4. Pick next roadmap item — **Feature #5 (history & log viewer)** remains the highest-leverage next step (every new log now carries attribution; UI doesn't exist yet).
+
+### What landed this session
+- **`docs/adr/0003-staff-management-and-duty-permissions.md`** (NEW) — locks in: onboarding wizard (no seed), manager-only duty editing, `StaffManagement` pure-helper namespace, self-protection + last-manager protection, hide-don't-disable policy, forgotten-PIN recovery in scope.
+- **`checklist-app/StaffManagement/StaffManagement.swift`** (NEW) — pure, framework-free permission helpers (`canCreateUser`, `canEdit`, `canPromote`, `canDemote`, `canDelete`). Caseless-enum namespace, mirrors `PinHasher` pattern. The UI is a thin shell over these.
+- **`checklist-app/StaffManagement/StaffManagementView.swift`** (NEW) — `NavigationStack` + `List` of users with add/edit/delete/reset-PIN sheets. All mutations re-validate via `StaffManagement.*` before touching the store. Inline explanations when an action is blocked (e.g. "Can't demote the only remaining manager").
+- **`checklist-app/Onboarding/OnboardingView.swift`** (NEW) — first-launch wizard (name → PIN → confirm). Single `Form` with inline validation. Auto-signs-in on completion; never shows again (detection is store-derived via `@Query` count of users in `ContentView`).
+- **`checklist-app/ContentView.swift`** (MODIFIED) — root now a 3-way switch (`OnboardingView` / `LoginView` / `AreaListView`); gear icon added to `AreaListView` toolbar beside `SwitchUserButton` (manager-only); `DutyListView`'s `+` button wrapped in `if currentUser?.isManager == true`; `AddDutySheet` gained defense-in-depth `onAppear` re-check.
+- **`checklist-app/checklist_appApp.swift`** (MODIFIED) — `seedOnLaunch` no longer creates demo users (Manager/0000 + Staff/1111 removed). It still seeds the open `BusinessDay` if none exists — that's required for the first completion log to be visible.
+- **`checklist-appTests/StaffManagementTests.swift`** (NEW) — 22 tests covering all five helpers: who-can-create, who-can-edit (rename/PIN reset), promote/demote rules, delete rules, self-protection, last-manager protection, and defense-against-partial-`allUsers`-list. Pure tests, no SwiftData container (uses detached `User` instances).
+- **`docs/ROADMAP.md`** (MODIFIED) — added Feature #7 section marked DONE; struck through the two ADR 0002 follow-ups this feature closes (staff-management UI, forgotten-PIN recovery).
+- **`docs/NEXT-STEPS.md`** (MODIFIED) — this entry.
+
+### Verification
+`xcodebuild test -scheme checklist-app -destination 'platform=iOS Simulator,name=iPhone 17'` → **TEST SUCCEEDED**, 66/66 cases pass, zero new warnings (only the pre-existing 9 DutyStatus Swift-6 actor-isolation notes remain).
+
+### How to use the new staff management
+1. **Delete the app from the simulator** (or wipe via `xcrun simctl uninstall`) to trigger first-launch onboarding.
+2. Launch → onboarding screen: enter your name, set a 4-digit PIN, confirm → land signed-in as the first manager.
+3. Tap the **gear icon** (top-left, beside your name) → Staff screen opens.
+4. Tap **+ Add User** → name + role (staff/manager) + 4-digit PIN → user appears in the directory.
+5. Tap any user row → edit name, change role, reset PIN, or delete (blocked if it would orphan managers).
+6. Switch User → tap a staff user → verify the `+` button is hidden on `DutyListView`.
+
+### Debugging notes (don't re-discover)
+- **`User(name:role:)` works without a ModelContext.** `@Model` classes can be instantiated detached; tests that only read `id`/`role`/`isManager` (like `StaffManagementTests`) don't need the in-memory-container dance that `AuthStoreTests` does.
+- **Caseless enum as a namespace** is the right Swift pattern for pure-helper files (`enum StaffManagement {}` with no cases). Can't be accidentally instantiated; static methods read as `StaffManagement.canDelete(...)`. Mirrors stdlib usage (e.g. `Mirror`).
+- **First-launch detection via `@Query` count, not a UserDefaults flag.** A defaults wipe with users still in the store would otherwise strand the app on onboarding; a store-derived check is self-correcting.
+- **Defense-in-depth in `AddDutySheet.onAppear`** — the `+` button is hidden for staff, but the sheet re-validates on appear and dismisses if the current user isn't a manager. Costs 4 lines, future-proofs against any path that surfaces the sheet without going through the button.
+- **`@State` initialized from a `let user: User` in `EditUserSheet.init`** — SwiftUI requires the `_name = State(initialValue: user.name)` pattern because `@State` is created once at view instantiation, not on each render. Direct assignment inside `init` is the documented workaround.
+
+### Open design decisions still flagged (not blocking)
+- **Auto sign-out on idle** (ADR 0002 follow-up, unchanged): a shared device left signed in misattributes logs. Restaurants vary on whether they want this. Defer until asked for.
+- **Forgotten finish-day** (unchanged): if nobody hits Finish Day, next morning's logs attach to yesterday's open business day. Now *also* could target the warning to "the manager" specifically via auth.
+- **Finish-day with incomplete closing duties** (unchanged): still allowed silently. Product decision still pending.
+- **Duty edit/delete UI** (ADR 0003 follow-up): the *permission* model is locked (manager-only), but there's no UI yet for editing or deleting existing duties. Forward-compatible — the gating is already in place.
+- **Bulk staff import / management-action audit trail / PIN rotation** — all explicitly deferred in ADR 0003.
+- **Pre-existing Swift 6 actor-isolation warnings** in `DutyStatusTests.swift` (9 warnings). Unchanged; address in a separate Swift 6 migration pass if desired.
+
+### Phase status
+| Phase | Status |
+|-------|--------|
+| Phase 0 — pure scheduling | ✅ Done (18/18) |
+| Phase 1 — SwiftData models | ✅ Done |
+| Phase 2 — UI | ✅ Done |
+| Tests — XCTest port | ✅ 18/18 green |
+| Phase 3 — `/code-review` + fixes | ✅ Done (`4094f62`) |
+| Feature #1 — Auth & current-user session | ✅ Done (44/44 green, ADR 0002) |
+| **Feature #7 — Staff management & duty permissions** | ✅ **Done** (66/66 green, ADR 0003) |
+
+---
+
+## 🔖 Session handoff — 2026-07-20 evening
 
 **One-line status:** Roadmap Feature #1 (Auth & current-user session) **done**. PIN-based login is live, `CompletionLog.completedBy` is populated on every new log, Finish Day gates on the signed-in manager. **44/44 tests green** (18 DutyStatus + 13 PinHasher + 13 AuthStore). ADR 0002 written. Next: pick another roadmap item — Feature #5 (history & log viewer) is now fully unblocked because every new log carries attribution.
 
