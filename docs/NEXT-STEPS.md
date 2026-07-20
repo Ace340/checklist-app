@@ -4,7 +4,59 @@ Handoff for the restaurant checklists feature. This doc is self-contained: read 
 
 ---
 
-## 🔖 Session handoff — 2026-07-18 evening (RESUME HERE)
+## 🔖 Session handoff — 2026-07-20 (RESUME HERE)
+
+**One-line status:** Phase 3 complete — `/code-review` skill executed, all hard findings addressed, 18/18 tests green. Committed (`4094f62`) and pushed. Next: pick an open design decision below, or start the next feature (auth/session is the natural next step — it unblocks real finish-day gating).
+
+### Exact resume action
+1. Pick one of the open design decisions below (none blocking) — OR — start the next feature. **Auth/session is highest-leverage** because it unblocks real finish-day gating and unlocks `CompletionLog.completedBy` (currently never populated).
+2. Optional housekeeping: address the 9 pre-existing Swift 6 actor-isolation warnings in `DutyStatusTests.swift` (see debugging notes below) if you want a clean Swift 6 build.
+3. Optional: tag the milestone (`git tag phase-3-complete`).
+
+### What landed this session (commit `4094f62`)
+- Ran `/code-review` skill against `main` since `411a7e6` (Phase 1 + Phase 2 + Tests). Standards + Spec axes ran in parallel as sub-agents.
+- 11 findings: 2 spec correctness bugs, 7 standards hard violations, 5 baseline smells. All hard findings addressed; 3 deferred with reasoning.
+
+**Spec fixes:**
+- **nil-businessDay silent data loss:** `toggle` now `guard let`s the current business day before inserting a `CompletionLog`. Previously, if `finishDay` had just run (or `seedOnLaunch` hadn't fired), a log could be inserted with `businessDay == nil` — silently invisible forever, since the derivation filters out nil-attributed logs. User would tap, row wouldn't flip, no error.
+- **`shouldSurface` wired into the UI:** `DutyListView.duties` now filters through `shouldSurface(status(of:))`. Weekly duties whose weekday hasn't arrived are hidden — also preventing early taps. 5 XCTest cases had pinned this rule but the UI ignored them.
+
+**Standards fixes:**
+- ADR #1 derivation extracted from a private SwiftUI View onto `TaskItem.isDone(in:)` / `isDoneThisWeek(asOf:calendar:)` so XCTest can cover it (was unreachable from the test target).
+- `CompletionLog.task` → `.duty` (CONTEXT.md avoid word); both sides of the SwiftData inverse updated.
+- `Phase` doc comment no longer uses banned word `stage` as a descriptor.
+- `DutyRow` 4 parallel `switch status` statements collapsed into one `DutyStatusStyle` table.
+- `(cadence, phase)` slot-name switch deduped into a shared `slotName` helper.
+- `AreaView.title/subtitle` statics → `Area.displayName/.subtitle`; `DutyRow.weekdayLabel` → `Weekday.displayName` (Feature Envy).
+- Test helper `day(_:_:_:)` → `date(y:m:d:)` (Mysterious Name + CONTEXT.md avoid word).
+
+**Deferred (with reasoning, see commit message for detail):**
+- "Front of House" / "Back of House" subtitles kept — canonical CONTEXT.md forms (the *Avoid* lists target colloquial synonyms like *the front*, not the glossary expansion itself).
+- `currentBusinessDay` `@Query` duplication — SwiftUI per-View idiom; would need a custom property wrapper for marginal gain.
+- Data-clumps / divergent-change smells — bigger refactor, out of review scope.
+
+### Debugging notes (don't re-discover)
+- **Pre-existing Swift 6 actor-isolation warnings** in `DutyStatusTests.swift` (9 warnings on `XCTAssertEqual` calls). These predate this session — they were already present after the 2026-07-18 evening commit. Swift 5 mode treats them as warnings, not errors; tests pass. Likely fix when ready: mark `DutyStatus`-equality tests nonisolated or annotate the test class. Address in a separate Swift 6 migration pass if/when desired.
+- **`xcodebuild test` is parallel-safe now:** the run uses "Clone N of iPhone 17" — tests execute in ~21s wall-clock for the full suite.
+
+### Open design decisions still flagged (not blocking)
+- **Finish-Day gating is loose:** the button shows if *any* manager `User` exists (a default manager is seeded on launch). Real gating needs a "current user"/auth session. `// TODO` markers in `checklist_appApp.swift` and `ContentView.swift`. **Highest-leverage next step.**
+- **Forgotten finish-day:** if nobody hits "Finish day", next morning's logs attach to yesterday's still-open business day. Options: warn on launch if the open business day is >24h old; auto-prompt manager.
+- **Finish-day with incomplete closing duties:** allowed (just closes) or blocked until all closing duties done? Decide.
+- **`CompletionLog.completedBy` is never populated** in the UI. Not a spec breach, but the audit-trail field exists and stays empty — half the audit value of ADR #1 is lost. Lands naturally with auth (you have a `User` to attribute).
+
+### Phase status
+| Phase | Status |
+|-------|--------|
+| Phase 0 — pure scheduling | ✅ Done (18/18) |
+| Phase 1 — SwiftData models | ✅ Done |
+| Phase 2 — UI | ✅ Done |
+| Tests — XCTest port | ✅ 18/18 green |
+| Phase 3 — `/code-review` + fixes | ✅ **Done** (`4094f62`) |
+
+---
+
+## 🔖 Session handoff — 2026-07-18 evening
 
 **One-line status:** Phase 1, Phase 2, and the XCTest port are all **green and committed** on `main` (pushed). 18/18 tests pass. Next: Phase 3 (`/code-review` skill against `CONTEXT.md` + ADR #1).
 
