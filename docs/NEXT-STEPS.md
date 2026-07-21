@@ -4,6 +4,75 @@ Handoff for the restaurant checklists feature. This doc is self-contained: read 
 
 ---
 
+## 🔖 Session handoff — 2026-07-21 (RESUME HERE)
+
+**One-line status:** Roadmap Feature #5 (Business-day history & log viewer) **done**. Managers can browse past business days from a new clock icon in `AreaListView`, drill into FOH / BOH / Other sections, see every `CompletionLog` captured in each, edit (`note` + `completedBy` only) via `LogEditSheet`, and delete with confirmation. Logs roll off after a rolling 30-day window (hard-deleted on app launch). **78/78 tests green** (12 new for `LogRetention` in Phase 0; the rolling total was 66 after Feature #7). ADR 0004 written — it explicitly revises one clause of ADR 0001 ("history stays intact forever in the logs"). Four commits across three phases, all pushed to `origin/main`.
+
+### Exact resume action
+1. **Optional: run `/code-review` skill** against the Feature #5 work (`5f96ff2..5430875`). Past review passes (commit `4094f62`) caught real spec/standards issues; worth doing here too. Standards axis + spec axis (ADR 0004) in parallel.
+2. **Optional: tag the milestone** (`git tag history-viewer-complete`).
+3. Pick the next roadmap item — likely candidates:
+   - **Feature #2 (Forgotten finish-day handling)** — Small. Pure UI logic; benefits from auth (warn the manager).
+   - **Feature #3 (Finish-day with incomplete closing duties)** — Small once the policy is decided.
+   - **Feature #4 (Duty templates & seed data)** — Medium. Wants real-restaurant input.
+   - **Duty edit/delete UI** (ADR 0003 deferred follow-up) — the permission model is locked; only the UI is missing. Now feels like a natural pair with #5 since the history viewer reveals how often managers want to clean up duties.
+
+### What landed this session (4 commits)
+- **`docs/adr/0004-history-viewer-and-retention.md`** (NEW) — locks in: business day → Area grouping, screen-only (no export), rolling 30-day hard-delete retention, manager-only edit (`note` + `completedBy`) and delete, atomic `lastEditedAt` / `lastEditedBy` stamps, `LogRetention` pure-helper namespace, no `LogEditPolicy` helper (inline `isManager` gate). Explicitly revises ADR 0001's "logs stay intact forever" clause with reasoning.
+- **`checklist-app/History/LogRetention.swift`** (NEW) — caseless-enum namespace. `retentionWindow` (= 30 × 24 × 60 × 60 seconds, named so the policy is searchable from one place), `cutoffDate(asOf:)`, `logsToDelete(in:asOf:)`. Framework-free, mirrors `PinHasher` / `StaffManagement`.
+- **`checklist-appTests/LogRetentionTests.swift`** (NEW) — 12 tests, AAA pattern, detached `CompletionLog` instances. Pins the strict-less-than boundary at exactly 30 days with three dedicated tests (`==cutoff`, `cutoff-1s`, `cutoff+1s`).
+- **`checklist-app/Models/CompletionLog.swift`** (MODIFIED) — added `lastEditedAt: Date?` + `lastEditedBy: User?`. Doc comment rewritten (was "immutable audit record"; now accurately describes ADR 0004 mutability + retention). `init` unchanged — new logs default to never-edited (both nil).
+- **`checklist-app/Models/User.swift`** (MODIFIED) — added `editedLogs: [CompletionLog]` with `@Relationship(deleteRule: .nullify, inverse: \CompletionLog.lastEditedBy)`, mirroring the existing `logs` / `completedBy` pair. `.nullify` so deleting a manager who edited logs keeps the logs but clears `lastEditedBy`.
+- **`checklist-app/checklist_appApp.swift`** (MODIFIED) — `seedOnLaunch` now also hard-deletes logs older than `LogRetention.cutoffDate(asOf: .now)` via a `#Predicate` fetch + per-log delete. Uses `#Predicate` for DB-layer filtering (more efficient than fetching all + running the pure helper in-memory). Doc comment updated to describe both invariants.
+- **`checklist-app/History/HistoryView.swift`** (NEW) — top-level `HistoryView` (`NavigationStack` + `List` of business days, most recent first, open day at top) + drill-down `BusinessDayDetailView` (FOH / BOH / Other sections, logs sorted newest-first within each) + `LogRow` (duty title, time, completer, note, "edited" pencil badge). Tap-to-edit + swipe-to-delete with `.alert` confirmation. "Other" section catches logs whose `duty?.checklist?.area == nil` (deleted-duty case) so they stay visible instead of silently dropping.
+- **`checklist-app/History/LogEditSheet.swift`** (NEW) — manager-only form sheet. `note` (multi-line text) + `completedBy` (Picker over all users with explicit "Unattributed" `UUID?.none` tag so managers can clear attribution). Save stamps `lastEditedAt` / `lastEditedBy` together — atomic audit signal. Duty title shown read-only. Footer surfaces last-edit info when present. Defense-in-depth `onAppear` re-check mirrors `AddDutySheet`.
+- **`checklist-app/ContentView.swift`** (MODIFIED) — `AreaListView` toolbar gains a `clock.arrow.circlepath` icon beside the staff gear (manager-only). New `@State showingHistory` + `.sheet` presentation. Updated the inline comment to reference both ADR 0003 and ADR 0004.
+
+### Verification
+`xcodebuild test -scheme checklist-app -destination 'platform=iOS Simulator,name=iPhone 17'` → **TEST SUCCEEDED**, 78/78 cases pass, zero new warnings (only the pre-existing 9 DutyStatus Swift-6 actor-isolation notes remain, unchanged since 2026-07-18).
+
+### How to use the new history viewer
+1. **Sign in as a manager** (onboarding-created manager or any promoted user — staff don't see the icon).
+2. Tap the **clock icon** (top-left, beside the staff gear) → History sheet opens with the open business day at the top showing "Open" + log count.
+3. Tap a business day → drill into FOH / BOH / Other sections. Logs are sorted newest-first within each section.
+4. **Tap a log** → edit sheet → change `note` (multi-line text) and/or `completedBy` (Picker, includes "Unattributed") → Save → row returns with a pencil badge indicating it's been edited. Footer inside the sheet shows last-edit info.
+5. **Swipe-left on a log** → tap Delete → confirmation alert → confirm → log is permanently removed.
+6. **Retention is invisible by design.** On every app launch, `seedOnLaunch` hard-deletes logs older than 30 days. No UI affordance, no setting, no tombstone.
+
+### Debugging notes (don't re-discover)
+- **`.tag(UUID?.none)` works for nil-selection in SwiftUI `Picker`.** The selection type must be declared `UUID?` on the `@State`; the tags use explicit Optional (`UUID?.none` and `Optional(user.id)`). Swift can't infer the nil case from context, so be explicit.
+- **`.alert(_:isPresented:)` with a `Binding(get:set:)` for "pending item" confirmation.** Clean way to associate a destructive confirmation with an optional state (`logPendingDeletion: CompletionLog?`). `get: { logPendingDeletion != nil }`, `set: { if !$0 { logPendingDeletion = nil } }`. The alert's button handlers clear the state, which auto-dismisses.
+- **`@ViewBuilder private func logRow(_:) -> some View` factors view modifiers across sections.** Used in `BusinessDayDetailView` so the `.contentShape`, `.onTapGesture`, and `.swipeActions` stay identical for FOH / BOH / Other rows. Without this, three near-duplicate ForEach bodies drift.
+- **`BusinessDay.logs` relationship is lazy-loaded by SwiftData.** Accessing `day.logs` in `BusinessDayDetailView` faults in the logs automatically — no fetch needed, no `@Query` required at the detail level. The top-level `@Query(sort: \BusinessDay.openedAt, order: .reverse)` in `HistoryView` handles fetching days.
+- **Schema migration was lightweight.** Adding optional fields (`lastEditedAt: Date?`, `lastEditedBy: User?`) + a new optional relationship (`User.editedLogs`) is automatic for SwiftData. In-memory test stores are immune. If a stale dev-store errors on schema change, delete the app from the simulator (same as every prior model change).
+- **Strict less-than at the retention boundary.** A log whose `timestamp` exactly equals the cutoff is NOT eligible for deletion — pinned by three tests in `LogRetentionTests` (`==cutoff` not deleted, `cutoff-1s` deleted, `cutoff+1s` not deleted). The ADR says "older than 30 × 24 hours"; the tests make it enforced.
+- **`log.duty?.checklist?.area == nil` is the "orphaned" check.** Catches both `duty == nil` AND `checklist == nil` cases — any log where Area can't be derived. `Area` is non-optional on `Checklist`, so this never matches a "legitimate nil area" (there's no such thing).
+
+### Open design decisions still flagged (not blocking)
+- **No `/code-review` run yet** on Feature #5. Worth doing before declaring the feature fully closed — past review passes caught real issues (commit `4094f62`).
+- **Auto sign-out on idle** (ADR 0002 follow-up, unchanged): a shared device left signed in misattributes logs. Restaurants vary on whether they want this. Defer until asked for.
+- **Forgotten finish-day** (unchanged): if nobody hits Finish Day, next morning's logs attach to yesterday's open business day. Now *additionally* relevant to history viewing — yesterday looks over-counted, today looks empty.
+- **Finish-day with incomplete closing duties** (unchanged): still allowed silently. Product decision still pending.
+- **Duty edit/delete UI** (ADR 0003 follow-up, unchanged): the permission model is locked, the UI doesn't exist. Now more visible since history shows deleted-duty logs as "(deleted duty)" — managers may want a cleaner way to retire a duty.
+- **Deletion audit trail** (ADR 0004 deferred): today, deleting a `CompletionLog` is silent — no record of who deleted what when. A `LogMutationAudit` aggregate would be the shape if this surfaces as a need.
+- **Search / filter within history view** (ADR 0004 deferred): chronological scroll is fine for one month of logs. Revisit if volume makes scroll painful.
+- **Bulk log actions** (ADR 0004 deferred): per-row swipe covers today's volume.
+- **Pre-existing Swift 6 actor-isolation warnings** in `DutyStatusTests.swift` (9 warnings). Unchanged; address in a separate Swift 6 migration pass if desired.
+
+### Phase status
+| Phase | Status |
+|-------|--------|
+| Phase 0 — pure scheduling | ✅ Done (18/18) |
+| Phase 1 — SwiftData models | ✅ Done |
+| Phase 2 — UI | ✅ Done |
+| Tests — XCTest port | ✅ 18/18 green |
+| Phase 3 — `/code-review` + fixes | ✅ Done (`4094f62`) |
+| Feature #1 — Auth & current-user session | ✅ Done (ADR 0002) |
+| Feature #7 — Staff management & duty permissions | ✅ Done (ADR 0003) |
+| **Feature #5 — Business-day history & log viewer** | ✅ **Done** (ADR 0004) |
+
+---
+
 ## 🔖 Session handoff — 2026-07-20 late (RESUME HERE)
 
 **One-line status:** Roadmap Feature #7 (Staff management & duty permissions) **done**. First-launch onboarding wizard replaces seeded demo users; managers can add/rename/promote/demote/reset-PIN/delete users via a new Staff screen; `+` duty button is hidden for staff. Forgotten-PIN recovery (ADR 0002 follow-up) closed as a side effect. **66/66 tests green** (18 DutyStatus + 13 PinHasher + 13 AuthStore + 22 StaffManagement). ADR 0003 written. Work uncommitted on `main`.

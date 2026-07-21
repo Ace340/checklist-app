@@ -4,9 +4,9 @@ What to build next, in priority order. Each feature is sized so it can land in o
 
 This doc is a sibling to `NEXT-STEPS.md` (session-by-session handoff) and `docs/adr/` (architecture decisions). The domain language is defined in `CONTEXT.md`.
 
-## Current state (Feature #1 + #7 — auth/session + staff management — complete)
+## Current state (Features #1 + #7 + #5 — auth/session, staff management, history viewer — complete)
 
-The core loop works: 6 checklists (Area × Cadence × Phase), tap-to-complete with derived state, manager finish-day, full audit trail in `CompletionLog` — now including **who** completed each duty (Feature #1). PIN-based login via onboarding wizard (no seeded demo users), shared-device session, finish-day gated on the signed-in manager, manager-only staff directory & duty editing (Feature #7). 66/66 tests green. What's missing for a real restaurant to use this daily is below.
+The core loop works: 6 checklists (Area × Cadence × Phase), tap-to-complete with derived state, manager finish-day, full audit trail in `CompletionLog` — including **who** completed each duty (Feature #1). PIN-based login via onboarding wizard (no seeded demo users), shared-device session, finish-day gated on the signed-in manager, manager-only staff directory & duty editing (Feature #7). Manager-only business-day history viewer with edit (`note` + `completedBy`) and delete; rolling 30-day hard-delete retention (Feature #5). 78/78 tests green. What's missing for a real restaurant to use this daily is below.
 
 ## Priority features
 
@@ -14,7 +14,7 @@ The core loop works: 6 checklists (Area × Cadence × Phase), tap-to-complete wi
 
 **What:** Replace the seeded default manager with a real login / current-user session.
 
-**Status:** Shipped. PIN-based (4 digits), shared device, one PIN per session, `@Observable AuthStore` in `.environment`, PIN stored as SHA-256 + per-user salt. `CompletionLog.completedBy` is now populated on every new log; Finish Day gates on the signed-in manager. See `docs/adr/0002-auth-and-current-user-session.md`. 44/44 tests green at the time; the rolling total is now 66/66 (Feature #7 added 22).
+**Status:** Shipped. PIN-based (4 digits), shared device, one PIN per session, `@Observable AuthStore` in `.environment`, PIN stored as SHA-256 + per-user salt. `CompletionLog.completedBy` is now populated on every new log; Finish Day gates on the signed-in manager. See `docs/adr/0002-auth-and-current-user-session.md`. 44/44 tests green at the time; the rolling total is now 78/78 (Feature #5 added 12).
 
 **Deferred follow-ups (not blocking, captured in ADR 0002):**
 - ~~Staff-management UI~~ — ✅ Shipped as Feature #7 below.
@@ -25,13 +25,26 @@ The core loop works: 6 checklists (Area × Cadence × Phase), tap-to-complete wi
 
 **What:** Manager-only UI for managing the user directory (add, rename, promote/demote, reset PIN, delete users) and manager-only editing of the duty catalog (add duties). Replaces the seeded demo users with a first-launch onboarding wizard that creates the first manager.
 
-**Status:** Shipped. Pure permission helpers in `StaffManagement.swift` (`canCreateUser`/`canEdit`/`canPromote`/`canDemote`/`canDelete`) backed by 19 unit tests; `StaffManagementView` (list/add/edit/delete/reset-PIN); `OnboardingView` (first-launch wizard); gear icon in `AreaListView` toolbar (manager-only); `+` button on `DutyListView` hidden for staff with defense-in-depth `onAppear` check in `AddDutySheet`. Self-protection (no demote/delete self) and last-manager protection enforced. See `docs/adr/0003-staff-management-and-duty-permissions.md`. 66/66 tests green.
+**Status:** Shipped. Pure permission helpers in `StaffManagement.swift` (`canCreateUser`/`canEdit`/`canPromote`/`canDemote`/`canDelete`) backed by 19 unit tests; `StaffManagementView` (list/add/edit/delete/reset-PIN); `OnboardingView` (first-launch wizard); gear icon in `AreaListView` toolbar (manager-only); `+` button on `DutyListView` hidden for staff with defense-in-depth `onAppear` check in `AddDutySheet`. Self-protection (no demote/delete self) and last-manager protection enforced. See `docs/adr/0003-staff-management-and-duty-permissions.md`. 66/66 tests green at the time; the rolling total is now 78/78.
 
 **Deferred follow-ups (captured in ADR 0003):**
 - Bulk staff import (CSV / paste-a-list) — real restaurants onboard 10-30 staff at once.
 - Audit trail of management actions ("who promoted whom," "who reset whose PIN") — would need a separate `ManagementActionLog` aggregate.
 - Required PIN complexity / rotation.
 - Duty edit/delete UI — the *permission* is locked here; the UI is its own piece of work.
+
+### 5. Business-day history & log viewer ✅ DONE (2026-07-21)
+
+**What:** A read-only (plus manager edit/delete) view of past business days — who completed what, when, with notes. Grouped by Area.
+
+**Status:** Shipped. Manager-only `HistoryView` (reached from a new clock icon beside the staff gear): list of business days (most recent first, open day at top) → drill into FOH / BOH / Other sections → logs sorted newest-first within each. Tap a log to edit `note` + `completedBy` via `LogEditSheet` (manager-only, defense-in-depth `onAppear` re-check, stamps `lastEditedAt`/`lastEditedBy` atomically). Swipe-left on a log to delete with `.alert` confirmation. Rolling 30-day hard-delete retention runs on app launch via `LogRetention` pure helper. See `docs/adr/0004-history-viewer-and-retention.md`. 78/78 tests green.
+
+**Deferred follow-ups (captured in ADR 0004):**
+- Bulk log actions (e.g. "delete all logs for user X who left").
+- Configurable retention per restaurant — currently hardcoded 30 days.
+- Deletion audit trail (`LogMutationAudit` aggregate) — deletes are silent today.
+- Search / filter within the history view.
+- "Edited" indicator UX — revision history would be its own design question.
 
 ### 2. Forgotten finish-day handling
 
@@ -78,22 +91,6 @@ The core loop works: 6 checklists (Area × Cadence × Phase), tap-to-complete wi
 - Should templates vary by restaurant type (quick-service vs full-service vs cafe)?
 - Reset to defaults — feature or anti-feature? (If a manager deletes a templated duty, do software updates restore it?)
 - Where does the seed data live — bundled JSON, Swift constants, or a SwiftData seed-on-first-launch like the current `seedOnLaunch`?
-
-### 5. Business-day history & log viewer
-
-**What:** A read-only view of past business days — who completed what, when, with notes. Filter by Area, Phase, duty, user.
-
-**Why:** The audit trail already exists in `CompletionLog` — the data is perfect — but there's no UI to read it. Managers can't review last Wednesday's closings today. This is the pay-off for ADR #1's "logs are forever" guarantee.
-
-**Scope:** Medium. Mostly a new view layer; reuses existing models.
-
-**Dependencies:** Much more valuable after Feature #1 (auth) populates `completedBy`. Without auth, the history shows *what* happened but not *who* did it.
-
-**Open questions:**
-- Group by business day, then Area? Or by duty, then date?
-- Export — PDF report, CSV, or just on-screen?
-- How long to retain logs? (Currently forever. Restaurant-legal hold periods vary.)
-- Undo window — should managers be able to edit or delete logs within X minutes of creation?
 
 ### 6. Notifications & reminders
 
