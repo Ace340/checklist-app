@@ -57,10 +57,14 @@ struct checklist_appApp: App {
     }
 }
 
-/// Ensures the "current business day" invariant holds before any view
-/// loads: the one `BusinessDay` with `closedAt == nil`. Derived daily
-/// state needs an open business day to attribute logs to; without it the
-/// first tap on a duty would be silently invisible.
+/// Ensures two invariants hold before any view loads:
+///   1. The "current business day" exists: the one `BusinessDay` with
+///      `closedAt == nil`. Derived daily state needs an open business day
+///      to attribute logs to; without it the first tap on a duty would be
+///      silently invisible.
+///   2. No `CompletionLog` is older than the rolling 30-day retention
+///      window (ADR 0004). Stale logs are hard-deleted here on every
+///      launch — bounded store, no tombstones, no background task.
 ///
 /// User seeding was removed in ADR 0003 — the first manager is now created
 /// by `OnboardingView` on first launch, and subsequent users are added via
@@ -71,6 +75,22 @@ private func seedOnLaunch(into context: ModelContext) {
     )
     if (try? context.fetchCount(openDayDescriptor)) == 0 {
         context.insert(BusinessDay())
+    }
+
+    // Hard-delete logs older than the rolling 30-day retention window
+    // (ADR 0004). The cutoff comes from the pure `LogRetention` helper
+    // (testable in isolation); the fetch + delete happens here because
+    // SwiftData's `#Predicate` filters at the DB layer — more efficient
+    // than fetching all and filtering in memory via the helper. An empty
+    // result set is a no-op.
+    let cutoff = LogRetention.cutoffDate(asOf: .now)
+    let staleLogsDescriptor = FetchDescriptor<CompletionLog>(
+        predicate: #Predicate { $0.timestamp < cutoff }
+    )
+    if let staleLogs = try? context.fetch(staleLogsDescriptor) {
+        for log in staleLogs {
+            context.delete(log)
+        }
     }
 
     try? context.save()

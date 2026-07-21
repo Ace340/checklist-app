@@ -48,6 +48,12 @@ final class User {
     @Relationship(deleteRule: .nullify, inverse: \CompletionLog.completedBy)
     var logs: [CompletionLog] = []
 
+    /// All completion records this user has edited (as manager). `.nullify`:
+    /// if a user is deleted, keep the logs they edited but clear the
+    /// `lastEditedBy` link. See ADR 0004.
+    @Relationship(deleteRule: .nullify, inverse: \CompletionLog.lastEditedBy)
+    var editedLogs: [CompletionLog] = []
+
     init(
         name: String,
         role: UserRole = .staff,
