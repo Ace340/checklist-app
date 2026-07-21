@@ -61,6 +61,7 @@ private struct AreaListView: View {
     private var openBusinessDays: [BusinessDay]
 
     @State private var showingStaffManagement = false
+    @State private var showingHistory = false
 
     private var currentBusinessDay: BusinessDay? { openBusinessDays.first }
     private var currentUser: User? { authStore.currentUser(in: modelContext) }
@@ -87,9 +88,16 @@ private struct AreaListView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     HStack(spacing: 12) {
                         SwitchUserButton(userName: currentUser?.name ?? "")
-                        // Manager-only staff directory (ADR 0003). Hidden for
-                        // staff — they're operators, not user-administrators.
+                        // Manager-only surfaces (ADR 0003 + ADR 0004).
+                        // Hidden for staff — they're operators, not
+                        // administrators or auditors.
                         if currentUser?.isManager == true {
+                            Button {
+                                showingHistory = true
+                            } label: {
+                                Image(systemName: "clock.arrow.circlepath")
+                                    .foregroundStyle(.secondary)
+                            }
                             Button {
                                 showingStaffManagement = true
                             } label: {
@@ -102,6 +110,9 @@ private struct AreaListView: View {
             }
             .sheet(isPresented: $showingStaffManagement) {
                 StaffManagementView()
+            }
+            .sheet(isPresented: $showingHistory) {
+                HistoryView()
             }
         }
     }
