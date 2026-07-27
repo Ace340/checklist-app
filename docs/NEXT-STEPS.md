@@ -4,6 +4,54 @@ Handoff for the restaurant checklists feature. This doc is self-contained: read 
 
 ---
 
+## 🔖 Session handoff — 2026-07-27 (RESUME HERE)
+
+**One-line status:** `/code-review` skill run against Feature #5 (`11235ee..0ca42f4`); 2 hard findings + 1 scope-creep + 1 minor mismatch addressed in one focused set of edits. **78/78 tests still green.** Standards + Spec axes ran in parallel as sub-agents. Work currently uncommitted on `main`.
+
+### Exact resume action
+1. **Review the diff and commit** (suggested message: `Address Feature #5 code-review findings (helper bypass + ADR/impl drift)`). Modified: `checklist-app/checklist_appApp.swift`, `docs/adr/0004-history-viewer-and-retention.md`, `docs/NEXT-STEPS.md`.
+2. Optional: tag the milestone (`git tag feature-5-reviewed`).
+3. Pick the next roadmap item — see candidates in the 2026-07-21 handoff below (Feature #2 forgotten finish-day is still highest-leverage).
+
+### What was reviewed
+Ran the `/code-review` skill against `11235ee..0ca42f4` (Feature #5: history viewer + retention, 4 commits, 756 insertions). Standards axis read `CONTEXT.md` + ADRs 0001–0004 + the Fowler smell baseline; Spec axis read ADR 0004 + the Feature #5 ROADMAP entry. Two sub-agents ran in parallel.
+
+### Findings & resolution
+
+**Addressed (this session):**
+- **Standards hard / Spec wrongness — `seedOnLaunch` bypassed `LogRetention.logsToDelete`.** Production code re-implemented the strict-`<` rule inline as `#Predicate { $0.timestamp < cutoff }`; the helper ADR 0004 designates as the call-site entry point had zero production callers (test-only). Rewired `seedOnLaunch` to fetch all logs and pass them through `LogRetention.logsToDelete(in:asOf:)` — the rule now has exactly one production implementation, pinned by `LogRetentionTests`. Inline comment rewrites the engineering tradeoff (single source of truth > marginal DB-layer efficiency at this data volume).
+- **Spec wrongness — ADR 0004 said `.confirmationDialog`, both impls use `.alert`.** Surfaced mid-fix: `StaffManagementView` (the cited reference) *also* uses `.alert`, so the ADR was the outlier, not the implementation. Reversed the originally-proposed fix direction (would have been a SwiftUI refactor of `HistoryView`; became a one-line doc fix). Updated ADR 0004 line 16.
+- **Spec mismatch — ADR 0004 vs ROADMAP vs impl on entry point.** ADR said "gear-icon menu gains a History entry"; ROADMAP said "clock icon beside the staff gear"; impl has three separate toolbar buttons. Updated ADR 0004 line 30 to match the impl + ROADMAP wording.
+- **Spec scope creep — "Other" section in `HistoryView`.** ADR 0004 said "FOH / BOH"; impl renders FOH / BOH / Other (catches logs whose `duty?.checklist?.area == nil`). Defensible — a deleted duty shouldn't make its past logs invisible — but unmentioned in the ADR. Updated ADR 0004 lines 11, 12, 31 to bless it.
+
+**Deferred (judgement calls, all in `HistoryView` / `LogRetention`):**
+- **Duplicated Code** — three near-identical `fohLogs` / `bohLogs` / `orphanedLogs` filter-and-sort shapes; one `logs(for area: Area?)` helper collapses them.
+- **Message Chain / Feature Envy** — `$0.duty?.checklist?.area` is a 3-hop walk; an `Area` convenience on `CompletionLog` (or `TaskItem`) would hide it.
+- **Misleading comment** — `LogRetention.swift:15-16` claims to mirror `PinHasher`'s caseless-enum pattern; `PinHasher` is actually top-level free functions. Only `StaffManagement` is a caseless enum.
+- **Banned synonym in comments** — `HistoryView.swift:24, 27` uses bare "day" where CONTEXT.md's avoid-list flags it; term-of-art is "business day." UI strings are clean.
+
+### Verification
+`xcodebuild test -scheme checklist-app -destination 'platform=iOS Simulator,name=iPhone 17'` → **TEST SUCCEEDED**, 78/78 cases pass (same count as pre-fix — the rewired production path now exercises the same `LogRetention.logsToDelete` code that `LogRetentionTests` already pinned).
+
+### Debugging notes (don't re-discover)
+- **Don't trust an ADR's API names verbatim.** ADR 0004 said `.confirmationDialog` for delete confirmation; both `HistoryView` and the cited `StaffManagementView` reference use `.alert`. Caught when checking the reference shape before refactoring. Always grep for the actual call site before treating an ADR's API mention as ground truth.
+- **`LogRetention.logsToDelete` is the right home for the rule, even at the cost of fetching without a `#Predicate`.** Data volume is bounded (single restaurant, rolling 30-day window — at most a few thousand logs); the single-source-of-truth win outweighs the DB-layer filter cost. The helper's strict-`<` boundary at exactly 30 days is pinned by three tests (`==cutoff`, `cutoff-1s`, `cutoff+1s`) — running through the helper gives the production path that guarantee for free.
+
+### Phase status
+| Phase | Status |
+|-------|--------|
+| Phase 0 — pure scheduling | ✅ Done (18/18) |
+| Phase 1 — SwiftData models | ✅ Done |
+| Phase 2 — UI | ✅ Done |
+| Tests — XCTest port | ✅ 18/18 green |
+| Phase 3 — `/code-review` + fixes | ✅ Done (`4094f62`) |
+| Feature #1 — Auth & current-user session | ✅ Done (ADR 0002) |
+| Feature #7 — Staff management & duty permissions | ✅ Done (ADR 0003) |
+| Feature #5 — Business-day history & log viewer | ✅ Done (ADR 0004) |
+| **Feature #5 `/code-review` pass + fixes** | ✅ **Done** (this session) |
+
+---
+
 ## 🔖 Session handoff — 2026-07-21 (RESUME HERE)
 
 **One-line status:** Roadmap Feature #5 (Business-day history & log viewer) **done**. Managers can browse past business days from a new clock icon in `AreaListView`, drill into FOH / BOH / Other sections, see every `CompletionLog` captured in each, edit (`note` + `completedBy` only) via `LogEditSheet`, and delete with confirmation. Logs roll off after a rolling 30-day window (hard-deleted on app launch). **78/78 tests green** (12 new for `LogRetention` in Phase 0; the rolling total was 66 after Feature #7). ADR 0004 written — it explicitly revises one clause of ADR 0001 ("history stays intact forever in the logs"). Four commits across three phases, all pushed to `origin/main`.

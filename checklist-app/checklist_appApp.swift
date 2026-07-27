@@ -78,17 +78,17 @@ private func seedOnLaunch(into context: ModelContext) {
     }
 
     // Hard-delete logs older than the rolling 30-day retention window
-    // (ADR 0004). The cutoff comes from the pure `LogRetention` helper
-    // (testable in isolation); the fetch + delete happens here because
-    // SwiftData's `#Predicate` filters at the DB layer — more efficient
-    // than fetching all and filtering in memory via the helper. An empty
-    // result set is a no-op.
-    let cutoff = LogRetention.cutoffDate(asOf: .now)
-    let staleLogsDescriptor = FetchDescriptor<CompletionLog>(
-        predicate: #Predicate { $0.timestamp < cutoff }
-    )
-    if let staleLogs = try? context.fetch(staleLogsDescriptor) {
-        for log in staleLogs {
+    // (ADR 0004). The "strictly older than 30 days" rule lives in exactly
+    // one place — `LogRetention.logsToDelete` — and is pinned by
+    // `LogRetentionTests`. We fetch the candidate set here (the helper is
+    // framework-free by design and never touches SwiftData), then perform
+    // the deletes. An empty result set is a no-op. Data volume is bounded
+    // (single restaurant, rolling 30-day window), so the in-memory filter
+    // is immaterial; the single-source-of-truth win outweighs the marginal
+    // cost of fetching logs without a DB-layer predicate.
+    let allLogsDescriptor = FetchDescriptor<CompletionLog>()
+    if let allLogs = try? context.fetch(allLogsDescriptor) {
+        for log in LogRetention.logsToDelete(in: allLogs, asOf: .now) {
             context.delete(log)
         }
     }
