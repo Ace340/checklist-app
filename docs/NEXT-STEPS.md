@@ -4,7 +4,65 @@ Handoff for the restaurant checklists feature. This doc is self-contained: read 
 
 ---
 
-## 🔖 Session handoff — 2026-07-27 (RESUME HERE)
+## 🔖 Session handoff — 2026-07-27 evening (RESUME HERE)
+
+**One-line status:** Roadmap Feature #2 (Forgotten finish-day handling) **done**. Managers see a one-shot `.alert` on cold launch if the open `BusinessDay` is older than 24 hours, with a "Finish Day" recovery button that calls the existing `finishDay()`. Staff see nothing (can't act). Pure helper `BusinessDayHealth.isStale(openedAt:asOf:)` is the single source of truth for the rule, pinned by 8 tests including the strict-greater-than boundary at exactly 24h. **86/86 tests green** (8 new for `BusinessDayHealth`; the rolling total was 78 after the Feature #5 review pass this afternoon). ADR 0005 written. Work uncommitted on `main`.
+
+### Exact resume action
+1. **Review the diff and commit** (suggested message: `feat(staleness): manager-only stale-business-day alert + recovery (Feature #2, ADR 0005)`). New: `checklist-app/Scheduling/BusinessDayHealth.swift`, `checklist-appTests/BusinessDayHealthTests.swift`, `docs/adr/0005-forgotten-finish-day.md`. Modified: `checklist-app/ContentView.swift`, `docs/ROADMAP.md`, `docs/NEXT-STEPS.md`.
+2. **Run the app** to sanity-check the alert: delete from simulator to trigger fresh onboarding → sign in as manager → set simulator device time forward 25 hours (or temporarily hack `BusinessDayHealth.staleThreshold` to a few seconds) → cold-launch the app (kill via app switcher, reopen) → alert should fire with "Finish Day" + "Not Now" → tap "Finish Day" → confirm new business day created and alert doesn't re-fire.
+3. Optional: run `/code-review` skill against the Feature #2 work.
+4. Pick the next roadmap item — candidates in priority order:
+   - **Feature #3 (Finish-day with incomplete closing duties)** — Small once policy is decided (block/warn/allow). Product call still pending.
+   - **Feature #4 (Duty templates & seed data)** — Medium, wants real-restaurant input.
+   - **Duty edit/delete UI** (ADR 0003 follow-up) — pairs naturally with #5 since the history viewer surfaces "(deleted duty)" rows.
+
+### What landed this session
+- **`docs/adr/0005-forgotten-finish-day.md`** (NEW) — locks in: 24h hardcoded threshold (mirrors `LogRetention.retentionWindow`), manager-only auto-alert on cold launch, staff see nothing, one-tap recovery via existing `finishDay()`, pure helper framework-free. Nine explicit rejected alternatives (18h threshold, badge instead of modal, persisted dismissal, configurable per restaurant, banner, staff banner, auto-finish without asking, server-side cron, re-alert on warm-launch).
+- **`checklist-app/Scheduling/BusinessDayHealth.swift`** (NEW) — caseless-enum namespace. `staleThreshold: TimeInterval = 24 * 60 * 60` (named for searchability). `isStale(openedAt:asOf:) -> Bool` returns `asOf.timeIntervalSince(openedAt) > staleThreshold` (uses `timeIntervalSince` rather than the `-` operator — see debugging notes). Framework-free, mirrors `LogRetention` / `StaffManagement`.
+- **`checklist-appTests/BusinessDayHealthTests.swift`** (NEW) — 8 tests: 2 threshold-value pins (semantic + literal 86,400), 2 common cases (just opened, 7 days ago), 3 boundary pins at exactly 24h (==, −1s, +1s), 1 defensive clock-skew case (future `openedAt`).
+- **`checklist-app/ContentView.swift`** (MODIFIED) — `AreaListView` gains `@State showingStaleDayAlert` + `@State didCheckStalenessOnAppear` (one-shot flag for cold-launch-only firing) + computed `isStaleDay`. `.onAppear` gated by the flag fires the alert if `currentUser?.isManager == true && isStaleDay`. `.alert` with "Finish Day" (calls existing `finishDay()`) + "Not Now" (cancel) buttons. Staff never trigger the flag.
+
+### Verification
+`xcodebuild test -scheme checklist-app -destination 'platform=iOS Simulator,name=iPhone 17'` → **TEST SUCCEEDED**, 86/86 cases pass, zero new warnings (only the pre-existing 9 DutyStatus Swift-6 actor-isolation notes remain).
+
+### How to use the new staleness alert
+1. Sign in as a manager.
+2. Force the open business day to be stale: either (a) set the simulator's device time forward 25+ hours via Features → Time Override, or (b) temporarily edit `BusinessDayHealth.staleThreshold` to a few seconds.
+3. Cold-launch the app (kill it via the app switcher, then reopen).
+4. Alert appears: title "Stale Business Day", body explaining 24h+ open, with a "Finish Day" primary and "Not Now" cancel.
+5. Tap "Finish Day" → alert dismisses, `finishDay()` runs, fresh business day created. Today's logs now attribute correctly.
+6. Tap "Not Now" instead → alert dismisses; logs continue attaching to the stale day until the manager manually taps the toolbar Finish Day. Alert re-fires next cold launch.
+
+### Debugging notes (don't re-discover)
+- **Don't use the `Date` `-` operator in this project.** `asOf - openedAt` fails to compile under the project's `MemberImportVisibility` upcoming-feature flag plus SwiftUI/SwiftData cross-import overlays: Swift tries to resolve `Strideable.-` and falls through to a `_Pointer` overload that requires `Date` to conform to `_Pointer`. Use `asOf.timeIntervalSince(openedAt)` instead — same semantics (positive when later), unambiguous, idiomatic. Likely affects any new pure helper doing Date arithmetic; document if it surfaces again.
+- **One-shot `@State` flag prevents re-fire on navigation return.** `AreaListView.onAppear` fires every time the manager pops back to the home screen, not just on cold launch. A `didCheckStalenessOnAppear` bool gates the check so dismissing the alert once holds until the view is destroyed (i.e. the app is killed). Verified by inspection — no SwiftUI behavior surprise.
+- **Cold-launch vs warm-launch boundary is the view's identity.** `AreaListView` is the root when signed in, so its `@State` persists across background→foreground transitions (warm launch) but resets when the process is killed and the view is recreated (cold launch). This matches the ADR's "re-alert on cold launch, not warm" semantic. If `AreaListView` ever stops being the root, this assumption breaks — re-evaluate.
+
+### Open design decisions still flagged (not blocking)
+- **Auto sign-out on idle** (ADR 0002 follow-up, unchanged): a shared device left signed in misattributes logs. A stale-day alert reaches whoever cold-launches; a signed-out device with no manager PIN still has the problem but no surface to fix it from.
+- **Configurable threshold per restaurant** (deferred to multi-tenant — ADR 0004 + ADR 0005).
+- **Notification-based reminder** (ROADMAP Feature #6): a push reminder at, say, 2am if the day is still open would catch the problem before morning. Separate feature; this ADR is the "morning-of" detection path.
+- **Finish-day with incomplete closing duties** (unchanged): still allowed silently. Product decision still pending.
+- **Pre-existing Swift 6 actor-isolation warnings** in `DutyStatusTests.swift` (9 warnings). Unchanged; address in a separate Swift 6 migration pass if desired.
+
+### Phase status
+| Phase | Status |
+|-------|--------|
+| Phase 0 — pure scheduling | ✅ Done (18/18) |
+| Phase 1 — SwiftData models | ✅ Done |
+| Phase 2 — UI | ✅ Done |
+| Tests — XCTest port | ✅ 18/18 green |
+| Phase 3 — `/code-review` + fixes | ✅ Done (`4094f62`) |
+| Feature #1 — Auth & current-user session | ✅ Done (ADR 0002) |
+| Feature #7 — Staff management & duty permissions | ✅ Done (ADR 0003) |
+| Feature #5 — Business-day history & log viewer | ✅ Done (ADR 0004) |
+| Feature #5 `/code-review` pass + fixes | ✅ Done (`cb23703`) |
+| **Feature #2 — Forgotten finish-day handling** | ✅ **Done** (ADR 0005) |
+
+---
+
+## 🔖 Session handoff — 2026-07-27 afternoon (Feature #5 review pass)
 
 **One-line status:** `/code-review` skill run against Feature #5 (`11235ee..0ca42f4`); 2 hard findings + 1 scope-creep + 1 minor mismatch addressed in one focused set of edits. **78/78 tests still green.** Standards + Spec axes ran in parallel as sub-agents. Work currently uncommitted on `main`.
 

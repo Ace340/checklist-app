@@ -4,9 +4,9 @@ What to build next, in priority order. Each feature is sized so it can land in o
 
 This doc is a sibling to `NEXT-STEPS.md` (session-by-session handoff) and `docs/adr/` (architecture decisions). The domain language is defined in `CONTEXT.md`.
 
-## Current state (Features #1 + #7 + #5 — auth/session, staff management, history viewer — complete)
+## Current state (Features #1 + #7 + #5 + #2 — auth/session, staff management, history viewer, forgotten finish-day — complete)
 
-The core loop works: 6 checklists (Area × Cadence × Phase), tap-to-complete with derived state, manager finish-day, full audit trail in `CompletionLog` — including **who** completed each duty (Feature #1). PIN-based login via onboarding wizard (no seeded demo users), shared-device session, finish-day gated on the signed-in manager, manager-only staff directory & duty editing (Feature #7). Manager-only business-day history viewer with edit (`note` + `completedBy`) and delete; rolling 30-day hard-delete retention (Feature #5). 78/78 tests green. What's missing for a real restaurant to use this daily is below.
+The core loop works: 6 checklists (Area × Cadence × Phase), tap-to-complete with derived state, manager finish-day, full audit trail in `CompletionLog` — including **who** completed each duty (Feature #1). PIN-based login via onboarding wizard (no seeded demo users), shared-device session, finish-day gated on the signed-in manager, manager-only staff directory & duty editing (Feature #7). Manager-only business-day history viewer with edit (`note` + `completedBy`) and delete; rolling 30-day hard-delete retention (Feature #5). Manager-only stale-business-day alert on cold launch (24h threshold) with one-tap recovery via existing `finishDay()` (Feature #2). 86/86 tests green. What's missing for a real restaurant to use this daily is below.
 
 ## Priority features
 
@@ -46,20 +46,22 @@ The core loop works: 6 checklists (Area × Cadence × Phase), tap-to-complete wi
 - Search / filter within the history view.
 - "Edited" indicator UX — revision history would be its own design question.
 
-### 2. Forgotten finish-day handling
+### 2. Forgotten finish-day handling ✅ DONE (2026-07-27)
 
 **What:** Warn (or auto-prompt) on launch if the current open `BusinessDay` is older than a threshold.
 
-**Why:** If nobody hit Finish Day last night, this morning's logs silently attach to yesterday's still-open business day. The data is correct per the model (the day didn't end), but the *meaning* is wrong — yesterday looks incomplete, today looks empty.
+**Status:** Shipped. Manager-only `.alert` on cold launch when `currentBusinessDay.openedAt` is older than 24 hours (hardcoded, mirrors `LogRetention.retentionWindow` pattern). "Finish Day" primary button calls existing `finishDay()` directly (one-tap recovery); "Not Now" cancel. Staff see nothing. Dismiss is not persisted — alert re-fires next cold launch while still stale. Pure helper `BusinessDayHealth.isStale(openedAt:asOf:)` is the single source of truth for the rule, framework-free, pinned by 8 tests including the strict-greater-than boundary at exactly 24h. See `docs/adr/0005-forgotten-finish-day.md`. 86/86 tests green at landing; rolling total is now 86/86.
 
-**Scope:** Small. Pure UI logic — compare `BusinessDay.openedAt` to `.now`, show an alert.
+**Resolved decisions (in ADR 0005):**
+- Threshold: 24 hours hardcoded (not 18h, not configurable).
+- Auto-prompt via `.alert` (not badge, not banner).
+- One-tap recovery via existing `finishDay()` — no new "recovery" code path.
+- Staff see nothing (can't act; surfacing broken-but-unfixable is friction).
 
-**Dependencies:** Benefits from Feature #1 (auth) so the warning reaches a manager specifically.
-
-**Open questions:**
-- Threshold: 24 hours? 18 hours? Configurable per restaurant?
-- Auto-prompt the manager, or just badge the Finish Day button?
-- Should "close the stale business day AND open a fresh one" be a single recovery action?
+**Deferred follow-ups (captured in ADR 0005):**
+- Auto sign-out on idle (ADR 0002 follow-up, unchanged).
+- Configurable threshold per restaurant (deferred to multi-tenant — ADR 0004).
+- Notification-based reminder (ROADMAP Feature #6) — would catch the problem before morning; this feature is the "morning-of" detection path.
 
 ### 3. Finish-day with incomplete closing duties
 

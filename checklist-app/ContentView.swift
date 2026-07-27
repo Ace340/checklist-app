@@ -62,9 +62,23 @@ private struct AreaListView: View {
 
     @State private var showingStaffManagement = false
     @State private var showingHistory = false
+    /// One-shot flag: the stale-day check runs at most once per view
+    /// instance (i.e. once per cold launch). Prevents the alert from
+    /// re-firing every time the manager returns to the home screen
+    /// after dismissing. ADR 0005.
+    @State private var didCheckStalenessOnAppear = false
+    @State private var showingStaleDayAlert = false
 
     private var currentBusinessDay: BusinessDay? { openBusinessDays.first }
     private var currentUser: User? { authStore.currentUser(in: modelContext) }
+
+    /// True if the open business day has been open longer than the
+    /// staleness threshold (ADR 0005). Drives the manager-only
+    /// "Finish Day?" alert on cold launch.
+    private var isStaleDay: Bool {
+        guard let openedAt = currentBusinessDay?.openedAt else { return false }
+        return BusinessDayHealth.isStale(openedAt: openedAt, asOf: .now)
+    }
 
     var body: some View {
         NavigationStack {
@@ -113,6 +127,27 @@ private struct AreaListView: View {
             }
             .sheet(isPresented: $showingHistory) {
                 HistoryView()
+            }
+            // ADR 0005: alert the manager (once per cold launch) if the
+            // open business day is stale. Staff never trigger this — they
+            // can't act on it (`finishDay` is manager-only). The one-shot
+            // flag resets with the view, so killing and reopening the app
+            // re-runs the check while still stale.
+            .onAppear {
+                guard !didCheckStalenessOnAppear else { return }
+                didCheckStalenessOnAppear = true
+                if currentUser?.isManager == true && isStaleDay {
+                    showingStaleDayAlert = true
+                }
+            }
+            .alert(
+                "Stale Business Day",
+                isPresented: $showingStaleDayAlert
+            ) {
+                Button("Finish Day", action: finishDay)
+                Button("Not Now", role: .cancel) {}
+            } message: {
+                Text("The current business day opened more than 24 hours ago. New logs will keep attaching to it until it's closed. Finish it now to start a fresh day.")
             }
         }
     }
