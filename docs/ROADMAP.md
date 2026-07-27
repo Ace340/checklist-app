@@ -4,9 +4,9 @@ What to build next, in priority order. Each feature is sized so it can land in o
 
 This doc is a sibling to `NEXT-STEPS.md` (session-by-session handoff) and `docs/adr/` (architecture decisions). The domain language is defined in `CONTEXT.md`.
 
-## Current state (Features #1 + #7 + #5 + #2 — auth/session, staff management, history viewer, forgotten finish-day — complete)
+## Current state (Features #1 + #7 + #5 + #2 + #3 — auth/session, staff management, history viewer, forgotten finish-day, finish-day warn — complete)
 
-The core loop works: 6 checklists (Area × Cadence × Phase), tap-to-complete with derived state, manager finish-day, full audit trail in `CompletionLog` — including **who** completed each duty (Feature #1). PIN-based login via onboarding wizard (no seeded demo users), shared-device session, finish-day gated on the signed-in manager, manager-only staff directory & duty editing (Feature #7). Manager-only business-day history viewer with edit (`note` + `completedBy`) and delete; rolling 30-day hard-delete retention (Feature #5). Manager-only stale-business-day alert on cold launch (24h threshold) with one-tap recovery via existing `finishDay()` (Feature #2). 86/86 tests green. What's missing for a real restaurant to use this daily is below.
+The core loop works: 6 checklists (Area × Cadence × Phase), tap-to-complete with derived state, manager finish-day, full audit trail in `CompletionLog` — including **who** completed each duty (Feature #1). PIN-based login via onboarding wizard (no seeded demo users), shared-device session, finish-day gated on the signed-in manager, manager-only staff directory & duty editing (Feature #7). Manager-only business-day history viewer with edit (`note` + `completedBy`) and delete; rolling 30-day hard-delete retention (Feature #5). Manager-only stale-business-day alert on cold launch (24h threshold) with one-tap recovery via existing `finishDay()` (Feature #2). Manager-only warn-and-confirm dialog when Finish Day is tapped with closing duties still incomplete — lists the duties, requires a deliberate "Finish Anyway" second tap (Feature #3). 94/94 tests green. What's missing for a real restaurant to use this daily is below.
 
 ## Priority features
 
@@ -63,20 +63,24 @@ The core loop works: 6 checklists (Area × Cadence × Phase), tap-to-complete wi
 - Configurable threshold per restaurant (deferred to multi-tenant — ADR 0004).
 - Notification-based reminder (ROADMAP Feature #6) — would catch the problem before morning; this feature is the "morning-of" detection path.
 
-### 3. Finish-day with incomplete closing duties
+### 3. Finish-day with incomplete closing duties ✅ DONE (2026-07-27)
 
 **What:** Decide what happens when a manager hits Finish Day with closing duties still pending.
 
-**Why:** Currently allowed silently. Restaurants will want one of three policies; this is a product call, not a technical one.
+**Status:** Shipped as **Warn**. A non-empty list of incomplete closing daily duties triggers a `.alert` titled "Finish Day?" with the count, a bullet list of duty titles, and two buttons: "Finish Anyway" (calls existing `finishDay()`) and "Cancel" (does nothing). Applied uniformly across FOH + BOH; no per-duty criticality, no per-Area variation. Both Finish Day entry points (toolbar button + stale-day recovery alert from ADR 0005) route through the same gate so the warn policy is uniform. Pure helper `FinishDayPolicy.incompleteClosingDuties(in:businessDay:)` is the single source of truth for the rule, framework-free, pinned by 8 tests using an in-memory SwiftData container (mirrors `AuthStoreTests`). No model change — completion is derived per ADR 0001. See `docs/adr/0006-finish-day-with-incomplete-closing-duties.md`. 94/94 tests green at landing (rolling total 86 + 8 new).
 
-**Scope:** Small once the policy is decided. Likely a confirmation dialog listing the incomplete duties.
+**Resolved decisions (in ADR 0006):**
+- Policy: Warn (not Block, not Allow-silent).
+- Scope: Uniform — every closing daily duty, both Areas.
+- Surfaced in the alert: the duty titles (bullet list, pluralized header).
+- Definition of "closing duty": `checklist.cadence == .daily && checklist.phase == .closing`. Weekly checklists have `phase == nil` by design and are excluded.
+- Override is **not** audited (deferred).
 
-**Dependencies:** None.
-
-**Open questions:**
-- **Block** (force completion first)? **Warn** (alert + require second tap)? **Allow** (current behavior)?
-- Does the policy vary by Area (FOH vs BOH) or by duty (e.g. "count the drawer" is required, "wipe menus" isn't)?
-- Should "override with reason" be logged to the audit trail?
+**Deferred follow-ups (captured in ADR 0006):**
+- Override audit trail (`BusinessDay.closedWithIncompleteDuties` snapshot or `FinishDayOverrideLog` aggregate).
+- Per-duty criticality (`.required` / `.skippable` flag on `TaskItem` — naturally pairs with the still-unbuilt duty edit UI from ADR 0003).
+- Block mode as opt-in (helper already returns the list; UI swap is one method).
+- Staff visibility of "can't leave yet, closing duties incomplete" (separate feature, separate ADR).
 
 ### 4. Duty templates & seed data
 

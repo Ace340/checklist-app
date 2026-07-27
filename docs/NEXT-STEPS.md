@@ -4,6 +4,71 @@ Handoff for the restaurant checklists feature. This doc is self-contained: read 
 
 ---
 
+## 🔖 Session handoff — 2026-07-27 late (RESUME HERE)
+
+**One-line status:** Roadmap Feature #3 (Finish-day with incomplete closing duties) **done**. A manager who hits Finish Day with closing daily duties still incomplete now sees a warn-and-confirm `.alert` listing them; "Finish Anyway" calls existing `finishDay()`, "Cancel" leaves the day open. Both finish-day entry points (toolbar button + ADR 0005 staleness recovery) route through the same gate, so the policy is uniform. **94/94 tests green** (8 new for `FinishDayPolicy`; rolling total was 86 after Feature #2 landed in commit `a274cc5`). ADR 0006 written. Work uncommitted on `main`.
+
+### Exact resume action
+1. **Review the diff and commit** (suggested message: `feat(finish-day): warn-and-confirm on incomplete closing duties (Feature #3, ADR 0006)`). Untracked: `checklist-app/Scheduling/FinishDayPolicy.swift`, `checklist-appTests/FinishDayPolicyTests.swift`, `docs/adr/0006-finish-day-with-incomplete-closing-duties.md`. Modified: `checklist-app/ContentView.swift`, `docs/ROADMAP.md`, `docs/NEXT-STEPS.md`.
+2. **Run the app** to sanity-check the warn flow: sign in as manager → add a closing daily duty → leave it undone → tap Finish Day → see the alert with the duty listed → tap Cancel → day stays open → tap Finish Day again → tap Finish Anyway → day closes. Also test the happy path: mark all closing duties done → tap Finish Day → no alert, day closes immediately.
+3. Optional: run `/code-review` skill against the Feature #3 work (ADR 0006 is the spec axis; CONTEXT.md + ADRs 0001–0005 + the Fowler smell baseline are the standards axis).
+4. Pick the next roadmap item — candidates in priority order:
+   - **Feature #4 (Duty templates & seed data)** — Medium, wants real-restaurant input. Highest leverage for first-run UX.
+   - **Duty edit/delete UI** (ADR 0003 follow-up) — the permission model is locked; only the UI is missing. Pairs naturally with Feature #4 since seeding wants editing affordances.
+   - **Override audit trail** (ADR 0006 follow-up) — if managers need "how often did this manager close incomplete?", a `BusinessDay.closedWithIncompleteDuties` snapshot is the shape.
+
+### What landed this session
+- **`docs/adr/0006-finish-day-with-incomplete-closing-duties.md`** (NEW) — locks in: Warn policy (not Block, not Allow-silent), uniform application (all closing daily duties across FOH + BOH), bullet-list of duty titles in the alert, no audit trail for override (deferred), both finish-day entry points route through the same gate. Seven explicit rejected alternatives (Block, Allow-silent, per-duty criticality, per-Area policy, `.confirmationDialog`, override audit, "don't warn again" persistence).
+- **`checklist-app/Scheduling/FinishDayPolicy.swift`** (NEW) — caseless-enum namespace. `incompleteClosingDuties(in:businessDay:) -> [TaskItem]` filters by `checklist.cadence == .daily && checklist.phase == .closing && !duty.isDone(in: businessDay)`. Framework-free, mirrors `BusinessDayHealth` / `LogRetention` / `StaffManagement`. Orphaned duties (`checklist == nil`) silently excluded — ADR 0004's history viewer handles the same nil case as "Other."
+- **`checklist-appTests/FinishDayPolicyTests.swift`** (NEW) — 8 tests using an in-memory SwiftData container (`@MainActor`, mirrors `AuthStoreTests`). Pins: empty input, all-complete happy path, all-incomplete, mixed, opening-excluded, weekly-excluded, orphaned-excluded, input-order preservation. The container pattern was chosen over detached `@Model` instances because the helper traverses `@Relationship` (`duty.logs`, `log.businessDay`) and the in-memory container guarantees correct relationship behavior.
+- **`checklist-app/ContentView.swift`** (MODIFIED) — `AreaListView` gains `@Query allDuties`, `@State showingFinishDayWarning`, `@State pendingIncompleteClosingDuties`, computed `finishDayWarningMessage` (pluralized header + bullet list). New private `requestFinishDay()` gate: computes via helper; empty → calls `finishDay()` directly (no friction); non-empty → stashes list and shows alert. Finish Day toolbar button action swapped to `requestFinishDay`. Stale-day alert's "Finish Day" button *also* swapped to `requestFinishDay` so recovery from a stale day still gets the warn treatment if closing duties are also incomplete (the more likely case for a stale day, not the less likely case). Existing `finishDay()` unchanged — it's the single mutation point, called by both the happy path and the warn alert's "Finish Anyway" button.
+
+### Verification
+`xcodebuild test -scheme checklist-app -destination 'platform=iOS Simulator,name=iPhone 17'` → **TEST SUCCEEDED**, 94/94 cases pass, zero new warnings (only the pre-existing 9 DutyStatus Swift-6 actor-isolation notes remain, unchanged since 2026-07-18).
+
+### How to use the new finish-day warn
+1. Sign in as a manager.
+2. Add at least one **closing daily duty** (any Area) and leave it undone. Or use existing data where a closing duty is pending in the current business day.
+3. Tap **Finish Day** in the toolbar.
+4. Alert appears: title "Finish Day?", body "N closing duties not marked done:" followed by a bullet list of titles.
+5. Tap **Cancel** → alert dismisses, day stays open. Tapping Finish Day again re-runs the check (latest completion state).
+6. Tap **Finish Anyway** instead → alert dismisses, `finishDay()` runs, day closes and a new one opens.
+7. Happy path: mark all closing daily duties done → tap Finish Day → no alert, day closes immediately.
+8. Stale-day interaction: if the day is also stale (ADR 0005), the cold-launch alert fires first; tapping its "Finish Day" runs `requestFinishDay`, which may then surface the warn alert if closing duties are incomplete. Two taps to recover, deliberately.
+
+### Debugging notes (don't re-discover)
+- **Two `.alert` modifiers on the same view are fine as long as they can't fire simultaneously.** The stale-day alert is `.onAppear` cold-launch-only; the finish-day warn is button-tap-only. They're keyed off separate `isPresented` `@State` and have never been observed racing. If a future feature adds a third alert, audit the timing carefully.
+- **Presenting one alert from another alert's button action works in iOS 15+.** Tested by the stale-day→finish-day-warn sequence: tapping "Finish Day" on the stale alert dismisses it and immediately presents the warn alert if closing duties are also incomplete. The state change is synchronous in the button handler; SwiftUI queues the presentation.
+- **`@Query private var allDuties: [TaskItem]` in `AreaListView` is a new fetch but cheap.** The catalog is bounded (single restaurant, tens of duties per checklist × 6 checklists). Mirrors the existing `DutyListView.allDuties` pattern; SwiftData handles per-view queries idiomatically.
+- **`FinishDayPolicyTests` uses the in-memory container pattern, not detached instances.** The helper traverses `duty.logs` (a `.cascade` `@Relationship`) and `log.businessDay` (a `.nullify` `@Relationship`). Detached `@Model` instances can be constructed (per `StaffManagementTests` note) but `@Relationship` behavior without a context is fragile — the container is the safe pattern when relationships are in play. The cost is `@MainActor` + `setUp`/`tearDown` boilerplate, same as `AuthStoreTests`.
+- **The helper deliberately doesn't sort.** Input order is preserved so the call site controls ordering (today: same order as `DutyListView`, sorted by `TaskItem.order`). The `preservesInputOrder` test pins this contract.
+- **Orphaned duties (`checklist == nil`) are silently excluded, not crashed on.** ADR 0004's history viewer makes the same nil-handling choice for logs (surfaces as "Other"). If `TaskItem.checklist` is ever made non-optional, this guard becomes dead code — fine to remove at that point.
+
+### Open design decisions still flagged (not blocking)
+- **Override audit trail** (ADR 0006 deferred): today, finishing with incomplete closing duties is silent in the audit trail. A `BusinessDay.closedWithIncompleteDuties: [String]?` snapshot (titles at close time, survives later rename/delete) or a `FinishDayOverrideLog` aggregate would be the shape. The history viewer's under-count is the indirect signal already; adding a "manager chose to override" record is a separate audit-trail decision (cf. ADR 0004's deferred `LogMutationAudit`).
+- **Per-duty criticality** (ADR 0006 deferred): a `Criticality` enum on `TaskItem` (`.required` / `.skippable`) unblocks a future "warn only on critical" mode without restructuring the helper. Naturally pairs with the still-unbuilt duty edit UI (ADR 0003 follow-up).
+- **Auto sign-out on idle** (ADR 0002 follow-up, unchanged): a shared device left signed in misattributes logs. Restaurants vary on whether they want this. Defer until asked for.
+- **Configurable policy per restaurant** (deferred to multi-tenant — ADRs 0004/0005/0006).
+- **Notification-based reminder** (ROADMAP Feature #6): would catch the forgotten-finish-day problem before morning; ADR 0005 is the "morning-of" detection path.
+- **Pre-existing Swift 6 actor-isolation warnings** in `DutyStatusTests.swift` (9 warnings). Unchanged; address in a separate Swift 6 migration pass if desired.
+
+### Phase status
+| Phase | Status |
+|-------|--------|
+| Phase 0 — pure scheduling | ✅ Done (18/18) |
+| Phase 1 — SwiftData models | ✅ Done |
+| Phase 2 — UI | ✅ Done |
+| Tests — XCTest port | ✅ 18/18 green |
+| Phase 3 — `/code-review` + fixes | ✅ Done (`4094f62`) |
+| Feature #1 — Auth & current-user session | ✅ Done (ADR 0002) |
+| Feature #7 — Staff management & duty permissions | ✅ Done (ADR 0003) |
+| Feature #5 — Business-day history & log viewer | ✅ Done (ADR 0004) |
+| Feature #5 `/code-review` pass + fixes | ✅ Done (`cb23703`) |
+| Feature #2 — Forgotten finish-day handling | ✅ Done (ADR 0005) |
+| **Feature #3 — Finish-day with incomplete closing duties** | ✅ **Done** (ADR 0006) |
+
+---
+
 ## 🔖 Session handoff — 2026-07-27 evening (RESUME HERE)
 
 **One-line status:** Roadmap Feature #2 (Forgotten finish-day handling) **done**. Managers see a one-shot `.alert` on cold launch if the open `BusinessDay` is older than 24 hours, with a "Finish Day" recovery button that calls the existing `finishDay()`. Staff see nothing (can't act). Pure helper `BusinessDayHealth.isStale(openedAt:asOf:)` is the single source of truth for the rule, pinned by 8 tests including the strict-greater-than boundary at exactly 24h. **86/86 tests green** (8 new for `BusinessDayHealth`; the rolling total was 78 after the Feature #5 review pass this afternoon). ADR 0005 written. Work uncommitted on `main`.

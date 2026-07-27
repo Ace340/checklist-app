@@ -60,6 +60,11 @@ private struct AreaListView: View {
     @Query(filter: #Predicate<BusinessDay> { $0.closedAt == nil })
     private var openBusinessDays: [BusinessDay]
 
+    /// Every duty in the catalog, used by the finish-day warn check
+    /// (ADR 0006) to compute the incomplete-closing-duties list across
+    /// both Areas. Mirrors `DutyListView.allDuties`.
+    @Query private var allDuties: [TaskItem]
+
     @State private var showingStaffManagement = false
     @State private var showingHistory = false
     /// One-shot flag: the stale-day check runs at most once per view
@@ -68,6 +73,12 @@ private struct AreaListView: View {
     /// after dismissing. ADR 0005.
     @State private var didCheckStalenessOnAppear = false
     @State private var showingStaleDayAlert = false
+    /// ADR 0006: Finish Day warn-and-confirm state. When the manager
+    /// taps Finish Day with closing duties still incomplete, the list
+    /// is stashed here and the alert is shown. "Finish Anyway" calls
+    /// the existing `finishDay()`; "Cancel" leaves the day open.
+    @State private var showingFinishDayWarning = false
+    @State private var pendingIncompleteClosingDuties: [TaskItem] = []
 
     private var currentBusinessDay: BusinessDay? { openBusinessDays.first }
     private var currentUser: User? { authStore.currentUser(in: modelContext) }
@@ -78,6 +89,20 @@ private struct AreaListView: View {
     private var isStaleDay: Bool {
         guard let openedAt = currentBusinessDay?.openedAt else { return false }
         return BusinessDayHealth.isStale(openedAt: openedAt, asOf: .now)
+    }
+
+    /// ADR 0006: body for the Finish Day warn alert. Pluralizes the
+    /// header line and bullet-lists the pending duty titles. Read by
+    /// the `.alert` modifier; built fresh on each presentation from
+    /// `pendingIncompleteClosingDuties`.
+    private var finishDayWarningMessage: String {
+        let count = pendingIncompleteClosingDuties.count
+        let noun = count == 1 ? "duty" : "duties"
+        let header = "\(count) closing \(noun) not marked done:\n\n"
+        let bullets = pendingIncompleteClosingDuties
+            .map { "• \($0.title)" }
+            .joined(separator: "\n")
+        return header + bullets
     }
 
     var body: some View {
@@ -95,7 +120,7 @@ private struct AreaListView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     if currentUser?.isManager == true {
-                        Button("Finish Day", action: finishDay)
+                        Button("Finish Day", action: requestFinishDay)
                             .disabled(currentBusinessDay == nil)
                     }
                 }
@@ -144,10 +169,25 @@ private struct AreaListView: View {
                 "Stale Business Day",
                 isPresented: $showingStaleDayAlert
             ) {
-                Button("Finish Day", action: finishDay)
+                Button("Finish Day", action: requestFinishDay)
                 Button("Not Now", role: .cancel) {}
             } message: {
                 Text("The current business day opened more than 24 hours ago. New logs will keep attaching to it until it's closed. Finish it now to start a fresh day.")
+            }
+            // ADR 0006: warn-and-confirm before closing the day with
+            // closing duties still incomplete. Cannot fire simultaneously
+            // with the stale-day alert above — that one is `.onAppear`
+            // cold-launch, this one is button-tap. The list is computed
+            // at tap time (not reactively) so it reflects the latest
+            // completion state, not whatever was true at view creation.
+            .alert(
+                "Finish Day?",
+                isPresented: $showingFinishDayWarning
+            ) {
+                Button("Finish Anyway", action: finishDay)
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(finishDayWarningMessage)
             }
         }
     }
@@ -161,6 +201,27 @@ private struct AreaListView: View {
         current.closedAt = .now
         modelContext.insert(BusinessDay())
         try? modelContext.save()
+    }
+
+    /// ADR 0006 finish-day gate. Computes the incomplete closing duties
+    /// via the pure helper; if non-empty, stashes the list and shows the
+    /// warn alert (the actual `finishDay()` is then called by the alert's
+    /// "Finish Anyway" button). If empty, calls `finishDay()` directly —
+    /// no friction on the happy path. Every finish-day entry point
+    /// (toolbar button + stale-day recovery) routes through here so the
+    /// warn policy applies uniformly.
+    private func requestFinishDay() {
+        guard let current = currentBusinessDay else { return }
+        let incomplete = FinishDayPolicy.incompleteClosingDuties(
+            in: allDuties,
+            businessDay: current
+        )
+        if incomplete.isEmpty {
+            finishDay()
+        } else {
+            pendingIncompleteClosingDuties = incomplete
+            showingFinishDayWarning = true
+        }
     }
 }
 
