@@ -76,7 +76,7 @@ private struct AreaListView: View {
     /// ADR 0006: Finish Day warn-and-confirm state. When the manager
     /// taps Finish Day with closing duties still incomplete, the list
     /// is stashed here and the alert is shown. "Finish Anyway" calls
-    /// the existing `finishDay()`; "Cancel" leaves the day open.
+    /// the existing `finishDay()`; "Cancel" leaves the business day open.
     @State private var showingFinishDayWarning = false
     @State private var pendingIncompleteClosingDuties: [TaskItem] = []
 

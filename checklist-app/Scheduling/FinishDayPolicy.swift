@@ -31,7 +31,7 @@ enum FinishDayPolicy {
 
     /// Returns the closing daily duties in `duties` that are not yet
     /// completed in `businessDay` — the list a manager should see before
-    /// the day is closed.
+    /// the business day is closed.
     ///
     /// A "closing duty" is a daily duty whose `checklist.phase == .closing`.
     /// Weekly duties are excluded by construction (weekly checklists have
