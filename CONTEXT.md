@@ -31,3 +31,11 @@ _Avoid_: day (ambiguous with calendar day), shift, service
 **Duty**:
 A single actionable item on a checklist (e.g. "Turn on dining room lights"). Modeled in code as `TaskItem`.
 _Avoid_: task (collides with Swift's concurrency `Task`), item, chore
+
+**Catalog**:
+The set of all active duties a restaurant expects staff to perform, across all 6 checklists. Archived duties are not part of the catalog. Managers edit the catalog via archive, restore, and edit actions (ADR 0007).
+_Avoid_: directory, inventory, roster
+
+**Archived Duty**:
+A duty removed from the active catalog by a manager but preserved with its full completion history. Archived duties do not surface on any active checklist; their past `CompletionLog`s remain visible in the business-day history. The action is reversible — a manager can **restore** an archived duty back to its original checklist, with all historical logs intact.
+_Avoid_: retired, deleted, hidden, removed, inactive
